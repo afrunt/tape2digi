@@ -275,7 +275,9 @@
     })
   }
 
+  // The editor stays mounted while closed, so its hooks exist only while a side is open.
   $effect(() => {
+    if (!side) return
     hooks.undo = () => stepHistory(true)
     hooks.redo = () => stepHistory(false)
     return () => {

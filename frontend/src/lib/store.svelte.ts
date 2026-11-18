@@ -145,7 +145,7 @@ function fieldEdited(): boolean {
 
 function stepEdit(undo: boolean) {
   if (fieldEdited() && document.execCommand(undo ? 'undo' : 'redo')) return
-  const h = undo ? (hooks.undo ?? hooks.undoMain) : (hooks.redo ?? hooks.redoMain)
+  const h = ui.edit ? (undo ? hooks.undo : hooks.redo) : undo ? hooks.undoMain : hooks.redoMain
   h?.()
 }
 
