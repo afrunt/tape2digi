@@ -1,0 +1,208 @@
+/* Islands Dark palette and metrics, resolved from IntelliJ IDEA 2026.3 ManyIslandsDark.
+   Only colour values and metrics are used; no IDE assets are copied. */
+/* Role variables. The two sets below are the only places with raw colour values. */
+:root {
+  color-scheme: dark;
+  --window-bg: #26282c;
+  --island-bg: #191a1c;
+  --control-bg: #212326;
+  --control-border: #40434a;
+  --control-hover-bg: #26282c;
+  --control-hover-border: #4c4f56;
+  --text: #d1d3d9;
+  --text-muted: #9fa2a8;
+  --accent: #3871e1;
+  --accent-hover: #4a82ee;
+  --accent-ring: #2a4371;
+  --link: #4a82ee;
+  --on-accent: #ffffff;
+  --danger: #c54e58;
+  --warning: #d59637;
+  --meter-ok: #4e9d6c;
+  --meter-warn: #d59637;
+  --meter-track: #212326;
+  --clip-off: #40434a;
+  --placeholder-bg: #212326;
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --radius-island: 20px;
+  --radius-control: 8px;
+  --island-gap: 6px;
+  --control-height: 28px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* Islands Light, resolved from IntelliJ IDEA 2026.3 ManyIslandsLight. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --window-bg: #e9eaee;
+  --island-bg: #ffffff;
+  --control-bg: #ffffff;
+  --control-border: #d1d3d9;
+  --control-hover-bg: #f7f8f9;
+  --control-hover-border: #b5b7bd;
+  --text: #000000;
+  --text-muted: #5f6269;
+  --accent: #3871e1;
+  --accent-hover: #2f5eb9;
+  --accent-ring: #d0dffe;
+  --link: #2f5eb9;
+  --on-accent: #ffffff;
+  --danger: #a4414a;
+  --warning: #875817;
+  --meter-ok: #338555;
+  --meter-warn: #d59637;
+  --meter-track: #e9eaee;
+  --clip-off: #c3c5cb;
+  --placeholder-bg: #f7f8f9;
+  --backdrop: rgba(25, 26, 28, 0.4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--window-bg);
+  color: var(--text);
+  font: calc(13px * var(--font-scale, 1))/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  padding: var(--island-gap);
+  gap: var(--island-gap);
+}
+
+.island {
+  background: var(--island-bg);
+  border-radius: var(--radius-island);
+  padding: 16px 20px;
+  min-width: 0;
+}
+
+h1,
+h2 {
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+
+h1 {
+  font-size: calc(20px * var(--font-scale, 1));
+}
+
+h2 {
+  font-size: calc(13px * var(--font-scale, 1));
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+label {
+  color: var(--text-muted);
+}
+
+input[type="text"],
+select {
+  height: var(--control-height);
+  min-width: 0;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  font: inherit;
+  outline: none;
+  user-select: text;
+}
+
+input[type="text"]:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+
+select:disabled,
+input:disabled {
+  opacity: 0.5;
+}
+
+button {
+  min-width: 72px;
+  height: var(--control-height);
+  padding: 0 14px;
+  color: var(--text);
+  background: var(--control-bg);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+  border-color: var(--control-hover-border);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button.primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button.danger {
+  color: var(--on-accent);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+button.link {
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  color: var(--link);
+  background: none;
+  border: none;
+}
+
+button:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.error {
+  color: var(--danger);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

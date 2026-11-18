@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>tape2digi</title>
+    <script>
+        try {
+            if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light"
+            var f = parseInt(localStorage.getItem("fontScale"), 10)
+            if (f >= 100 && f <= 150) document.documentElement.style.setProperty("--font-scale", String(f / 100))
+        } catch (e) {}
+    </script>
+</head>
+<body>
+<div id="app"></div>
+<script src="./src/main.ts" type="module"></script>
+</body>
+</html>
