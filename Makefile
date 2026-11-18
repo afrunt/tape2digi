@@ -56,7 +56,7 @@ $(filter dist-linux-%,$(DIST_TARGETS)): dist-linux-%: frontend
 	docker build --platform linux/$* -f build/docker/linux.Dockerfile -t $(APP)-build-$* build/docker
 	docker run --rm --platform linux/$* -v "$(CURDIR)":/src -v $(APP)-gocache-$*:/root/.cache/go-build -v $(APP)-gomod-$*:/go/pkg/mod \
 		-e CGO_ENABLED=1 $(APP)-build-$* \
-		go build -tags desktop,production,webkit2_41 -ldflags "-s -w $(LDFLAGS)" -o build/bin/linux-$*/$(APP) .
+		go build -buildvcs=false -tags desktop,production,webkit2_41 -ldflags "-s -w $(LDFLAGS)" -o build/bin/linux-$*/$(APP) .
 	rm -f dist/$(APP)-$(VERSION)-linux-$*.tar.gz
 	tar -C build/bin/linux-$* -czf dist/$(APP)-$(VERSION)-linux-$*.tar.gz $(APP)
 
