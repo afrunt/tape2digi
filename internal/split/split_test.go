@@ -55,6 +55,44 @@ func TestDetectUnavailableWithoutClearTracks(t *testing.T) {
 	}
 }
 
+func tracks(t *testing.T, env []float32) int {
+	t.Helper()
+	return len(Detect(env)) / 2
+}
+
+func TestDetectShortPausesAreSmallShareOfSide(t *testing.T) {
+	env := build(
+		[2]float64{1, -68}, [2]float64{100, -25}, [2]float64{2.5, -68}, [2]float64{100, -25},
+		[2]float64{2.5, -68}, [2]float64{100, -25}, [2]float64{1, -68},
+	)
+	if got := tracks(t, env); got != 3 {
+		t.Fatalf("got %d tracks, want 3", got)
+	}
+}
+
+func TestDetectFadeOutEndingInBriefDip(t *testing.T) {
+	fadeGap := [][2]float64{{1.5, -45}, {1, -68}, {0.5, -45}}
+	segs := [][2]float64{{12, -68}, {100, -25}}
+	segs = append(segs, fadeGap...)
+	segs = append(segs, [2]float64{100, -25})
+	segs = append(segs, fadeGap...)
+	segs = append(segs, [2]float64{100, -25}, [2]float64{10, -68})
+	if got := tracks(t, build(segs...)); got != 3 {
+		t.Fatalf("got %d tracks, want 3", got)
+	}
+}
+
+func TestDetectQuietPassageIsNotAGap(t *testing.T) {
+	env := build(
+		[2]float64{12, -68}, [2]float64{60, -25},
+		[2]float64{2, -50}, [2]float64{0.3, -68}, [2]float64{2, -50}, // a quiet bar with a brief drop
+		[2]float64{60, -25}, [2]float64{10, -68},
+	)
+	if got := tracks(t, env); got != 0 {
+		t.Fatalf("got %d tracks, want no split", got)
+	}
+}
+
 // TestDetectRealRecording runs against a real side when T2D_SPLIT_SAMPLE names a WAV file.
 func TestDetectRealRecording(t *testing.T) {
 	path := os.Getenv("T2D_SPLIT_SAMPLE")

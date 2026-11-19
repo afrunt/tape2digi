@@ -18,6 +18,17 @@ const (
 	minGapMs     = 2000
 	minTrackMs   = 10000
 	padMs        = 250 // markers sit this far into the silence around a track
+
+	// Tape pauses are often a fade-out ending in a brief dip to the hiss: a
+	// gap is also a fadeMs-long run below fadePos that holds a deepMs-long
+	// run below deepPos (shares of the way from floor to music).
+	fadePos = 0.6
+	deepPos = 0.25
+	fadeMs  = 2000
+	deepMs  = 500
+
+	digitalSilenceDB = -90 // below this a window is digital silence, not tape hiss
+	floorPermille    = 10  // the floor is this low share of the hiss and music windows
 )
 
 // Span is a stretch of envelope windows, To exclusive.
@@ -28,7 +39,7 @@ type Span struct{ From, To int }
 // two tracks exists.
 func Detect(env []float32) []project.Marker {
 	n := len(env)
-	gaps, ok := Silences(env, minGapMs)
+	gaps, ok := trackGaps(env)
 	if !ok {
 		return nil
 	}
@@ -74,6 +85,77 @@ func Detect(env []float32) []project.Marker {
 			e = total
 		}
 		out = append(out, project.Marker{Kind: project.MarkerStart, PositionMs: s}, project.Marker{Kind: project.MarkerEnd, PositionMs: e})
+	}
+	return out
+}
+
+// trackGaps finds the pauses between tracks. Short pauses may be a small share
+// of a side, so the floor comes from the quietest windows: tape hiss when there
+// is any, otherwise digital silence (for example in an imported file).
+func trackGaps(env []float32) ([]Span, bool) {
+	if len(env) == 0 {
+		return nil, false
+	}
+	all := append([]float32(nil), env...)
+	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
+	music := float64(all[len(all)/2])
+	audible := sort.Search(len(all), func(i int) bool { return all[i] > digitalSilenceDB })
+	floor := float64(all[len(all)*floorPermille/1000])
+	if rest := all[audible:]; len(rest) > 0 {
+		if f := float64(rest[len(rest)*floorPermille/1000]); music-f >= minSpreadDB {
+			floor = f
+		}
+	}
+	if music-floor < minSpreadDB {
+		return nil, false
+	}
+	at := func(pos float64) float32 { return float32(floor + pos*(music-floor)) }
+	mid, fade, deep := at(thresholdPos), at(fadePos), at(deepPos)
+
+	var gaps []Span
+	for _, r := range runs(env, mid, 0, len(env)) {
+		if (r.To-r.From)*WindowMs >= minGapMs || fadedDip(env, r, fade, deep) {
+			gaps = append(gaps, r)
+		}
+	}
+	return gaps, true
+}
+
+// fadedDip reports whether the run r below the silence threshold reaches the
+// hiss for deepMs and lies inside a fadeMs-long quiet stretch.
+func fadedDip(env []float32, r Span, fade, deep float32) bool {
+	from, to := r.From, r.To
+	for from > 0 && env[from-1] < fade {
+		from--
+	}
+	for to < len(env) && env[to] < fade {
+		to++
+	}
+	if (to-from)*WindowMs < fadeMs {
+		return false
+	}
+	for _, d := range runs(env, deep, r.From, r.To) {
+		if (d.To-d.From)*WindowMs >= deepMs {
+			return true
+		}
+	}
+	return false
+}
+
+// runs returns the stretches of env[from:to] below thr.
+func runs(env []float32, thr float32, from, to int) []Span {
+	var out []Span
+	for i := from; i < to; {
+		if env[i] >= thr {
+			i++
+			continue
+		}
+		j := i
+		for j < to && env[j] < thr {
+			j++
+		}
+		out = append(out, Span{i, j})
+		i = j
 	}
 	return out
 }
