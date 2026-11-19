@@ -7,6 +7,7 @@
   import RecorderScreen from './screens/RecorderScreen.svelte'
   import Dialogs from './lib/Dialogs.svelte'
   import ExportDialog from './lib/ExportDialog.svelte'
+  import LookupDialog from './lib/LookupDialog.svelte'
   import SideEditor from './lib/SideEditor.svelte'
   import TrackPlayer from './lib/TrackPlayer.svelte'
   import BottomBar from './lib/BottomBar.svelte'
@@ -20,6 +21,7 @@
         applyLanguage(normalizeLanguage(s.language))
         applyTheme(normalizeTheme(s.theme))
         applyFontScale(normalizeFontScale(s.fontScale))
+        ui.onlineLookup = !!s.onlineLookup
       })
       .catch(() => {})
     // Never auto-open: a project is only active if one was opened this session.
@@ -36,6 +38,7 @@
 
 <BottomBar />
 <ExportDialog />
+<LookupDialog />
 <Dialogs />
 <SideEditor />
 <TrackPlayer />

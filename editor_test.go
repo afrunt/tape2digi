@@ -370,3 +370,61 @@ func TestUndoLastRedoLastFollowTheMostRecentSide(t *testing.T) {
 		t.Fatalf("nothing left to redo: %+v", h)
 	}
 }
+
+func TestRepairSideAppliesMonoAndUndoRestores(t *testing.T) {
+	p, err := project.Create(t.TempDir(), "M")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(p.Dir(), "side-A.wav")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w, err := wav.NewWriter(f, wav.Format{SampleRate: 8000, Channels: 2, BitDepth: 16})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := make([]byte, 8000*4*3)
+	for i := 0; i < len(data); i += 4 {
+		l := int16(8000 * math.Sin(float64(i/4)*0.2))
+		r := l / 2
+		data[i], data[i+1] = byte(l), byte(uint16(l)>>8)
+		data[i+2], data[i+3] = byte(r), byte(uint16(r)>>8)
+	}
+	_, _ = w.Write(data)
+	_ = w.Close()
+	_ = f.Close()
+	if err := p.SetSide("A", project.Side{Origin: project.OriginRecorded, RecordedAt: time.Now().UTC(), DurationMs: 3000, SampleRate: 8000, Channels: 2, BitDepth: 16}); err != nil {
+		t.Fatal(err)
+	}
+	src := &audio.FakeSource{}
+	app := &App{proj: p, src: src, rec: recorder.New(src, recorder.Handlers{}), recents: project.NewRecents(appdata.Dir{Path: t.TempDir()})}
+
+	plan, err := app.SideRepairPlan("A")
+	if err != nil || plan.Channels != 2 || !plan.BalanceFix {
+		t.Fatalf("plan %+v err %v", plan, err)
+	}
+	if _, err := app.RepairSide("A", "hum", "", 0); err == nil {
+		t.Fatal("hum repair offered without hum")
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := app.RepairSide("A", "mono", "left", 0); err != nil {
+		t.Fatal(err)
+	}
+	staged, _ := p.AudioPath("A")
+	after, _ := os.ReadFile(staged)
+	if len(after) != len(before) || !bytes.Equal(after[44:46], after[46:48]) || bytes.Equal(before, after) {
+		t.Fatal("mono left did not copy the left channel")
+	}
+	if plan, _ := app.SideRepairPlan("A"); plan.BalanceFix {
+		t.Fatal("the cached analysis must be dropped after an edit")
+	}
+	if _, err := app.UndoSide("A"); err != nil {
+		t.Fatal(err)
+	}
+	restored, _ := p.AudioPath("A")
+	if got, _ := os.ReadFile(restored); !bytes.Equal(before, got) {
+		t.Fatal("undo did not restore the original audio")
+	}
+}

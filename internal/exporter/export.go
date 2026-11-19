@@ -33,6 +33,10 @@ type Options struct {
 	Dir        string  `json:"dir"`
 	// ExportOriginal also copies the stored side recordings as WAV files.
 	ExportOriginal bool `json:"exportOriginal"`
+	// ReplayGain measures the loudness and writes ReplayGain 2.0 tags.
+	ReplayGain bool `json:"replayGain"`
+	// NameTemplate names the track files; empty means DefaultNameTemplate.
+	NameTemplate string `json:"nameTemplate"`
 }
 
 // FormatInfo tells whether a format can be exported and why not.
@@ -176,6 +180,11 @@ func Run(ctx context.Context, in Input, opts Options, report func(done, total in
 	if len(tracks) == 0 {
 		return nil, i18n.New("export.noTracks")
 	}
+	if opts.NameTemplate != "" && opts.Format != FormatFLACCue {
+		if err := CheckTemplate(opts.NameTemplate); err != nil {
+			return nil, err
+		}
+	}
 	plan := in.Plan()
 	var info FormatInfo
 	for _, f := range plan.Formats {
@@ -231,7 +240,10 @@ func Run(ctx context.Context, in Input, opts Options, report func(done, total in
 	for _, t := range tracks {
 		pr.total += t.Frames * int64(t.Side.Format.BlockAlign())
 	}
-	names := in.Files(opts.Format)
+	if opts.ReplayGain {
+		pr.total *= 2
+	}
+	names := in.FilesFor(Options{Format: opts.Format, NameTemplate: opts.NameTemplate})
 	if opts.ExportOriginal {
 		for _, o := range in.Originals {
 			if st, e := os.Stat(o.Path); e == nil {
@@ -272,10 +284,16 @@ func Run(ctx context.Context, in Input, opts Options, report func(done, total in
 		return nil
 	}
 
+	var rg *replayGain
+	if opts.ReplayGain {
+		if rg, err = measureReplayGain(ctx, tracks, pr); err != nil {
+			return nil, err
+		}
+	}
 	switch opts.Format {
 	case FormatWAV, FormatMP3:
 		for i, t := range tracks {
-			tag, e := id3Tag(in, t, tagCover)
+			tag, e := id3Tag(in, t, tagCover, replayGainTags(rg.track(i), rg.album()))
 			if e != nil {
 				return written, e
 			}
@@ -290,11 +308,11 @@ func Run(ctx context.Context, in Input, opts Options, report func(done, total in
 			}
 		}
 	case FormatFLACCue:
-		if err = write(names[0], func(w *os.File) error { return writeFLAC(ctx, w, in, tracks, cover, names[0], pr) }); err != nil {
+		if err = write(names[0], func(w *os.File) error { return writeFLAC(ctx, w, in, tracks, cover, names[0], rg, pr) }); err != nil {
 			return written, err
 		}
 		if err = write(names[1], func(w *os.File) error {
-			_, e := w.WriteString(cueSheet(in, tracks, names[0]))
+			_, e := w.WriteString(cueSheet(in, tracks, names[0], rg))
 			return e
 		}); err != nil {
 			return written, err
@@ -536,7 +554,7 @@ func readerErr(err error) error {
 }
 
 // writeFLAC writes all tracks back to back as one FLAC stream.
-func writeFLAC(ctx context.Context, w *os.File, in Input, tracks []Track, cover []byte, flacName string, pr *progress) error {
+func writeFLAC(ctx context.Context, w *os.File, in Input, tracks []Track, cover []byte, flacName string, rg *replayGain, pr *progress) error {
 	f := tracks[0].Side.Format
 	var total uint64
 	for _, t := range tracks {
@@ -548,7 +566,7 @@ func writeFLAC(ctx context.Context, w *os.File, in Input, tracks []Track, cover 
 		SampleRate: uint32(f.SampleRate), NChannels: uint8(f.Channels), BitsPerSample: uint8(f.BitDepth),
 		NSamples: total,
 	}
-	tags := [][2]string{{"ALBUM", in.AlbumName()}, {"CUESHEET", cueSheet(in, tracks, flacName)}}
+	tags := [][2]string{{"ALBUM", in.AlbumName()}, {"CUESHEET", cueSheet(in, tracks, flacName, rg)}}
 	add := func(k, v string) {
 		if v != "" {
 			tags = append(tags, [2]string{k, v})
@@ -557,6 +575,7 @@ func writeFLAC(ctx context.Context, w *os.File, in Input, tracks []Track, cover 
 	add("ARTIST", in.Artist)
 	add("DATE", in.Year)
 	add("GENRE", in.Genre)
+	tags = append(tags, replayGainTags(gainValue{}, rg.album())...)
 	blocks := []*meta.Block{{Header: meta.Header{Type: meta.TypeVorbisComment, Length: 1}, Body: &meta.VorbisComment{Vendor: "tape2digi", Tags: tags}}}
 	if len(cover) > 0 {
 		cfg, _, err := image.DecodeConfig(bytes.NewReader(cover))

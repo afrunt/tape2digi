@@ -11,6 +11,7 @@ import (
 	"math/cmplx"
 	"os"
 
+	"github.com/afrunt/tape2digi/internal/dsp"
 	"github.com/afrunt/tape2digi/internal/split"
 	"github.com/afrunt/tape2digi/internal/wav"
 )
@@ -65,55 +66,6 @@ func Analyze(env []float32) (Plan, bool) {
 	return Plan{Runs: runs, NoiseDB: noise}, true
 }
 
-type fft struct {
-	n   int
-	rev []int
-	tw  []complex128
-}
-
-func newFFT(n int) *fft {
-	f := &fft{n: n, rev: make([]int, n), tw: make([]complex128, n/2)}
-	bits := 0
-	for 1<<bits < n {
-		bits++
-	}
-	for i := range f.rev {
-		r := 0
-		for b := 0; b < bits; b++ {
-			if i&(1<<b) != 0 {
-				r |= 1 << (bits - 1 - b)
-			}
-		}
-		f.rev[i] = r
-	}
-	for i := range f.tw {
-		f.tw[i] = cmplx.Rect(1, -2*math.Pi*float64(i)/float64(n))
-	}
-	return f
-}
-
-// transform runs an in-place FFT; the inverse is unscaled.
-func (f *fft) transform(x []complex128, inverse bool) {
-	for i, r := range f.rev {
-		if i < r {
-			x[i], x[r] = x[r], x[i]
-		}
-	}
-	for size := 2; size <= f.n; size <<= 1 {
-		half, step := size/2, f.n/size
-		for start := 0; start < f.n; start += size {
-			for k := 0; k < half; k++ {
-				w := f.tw[k*step]
-				if inverse {
-					w = cmplx.Conj(w)
-				}
-				a, b := x[start+k], x[start+k+half]*w
-				x[start+k], x[start+k+half] = a+b, a-b
-			}
-		}
-	}
-}
-
 // sqrtHann is the analysis and synthesis window; at 75% overlap its square sums to 2.
 func sqrtHann() []float64 {
 	w := make([]float64, fftSize)
@@ -145,7 +97,7 @@ func profile(src *os.File, format wav.Format, off, frames int64, runs []split.Sp
 	ch, bps := format.Channels, format.BitDepth/8
 	frame := int64(format.BlockAlign())
 	scale := float64(int64(1) << (format.BitDepth - 1))
-	win, tr := sqrtHann(), newFFT(fftSize)
+	win, tr := sqrtHann(), dsp.NewFFT(fftSize)
 	sum := make([][]float64, ch)
 	for c := range sum {
 		sum[c] = make([]float64, fftSize/2+1)
@@ -169,7 +121,7 @@ func profile(src *os.File, format wav.Format, off, frames int64, runs []split.Sp
 				for i := 0; i < fftSize; i++ {
 					buf[i] = complex(sample(raw[(pos+int64(i))*frame+int64(c*bps):], bps)/scale*win[i], 0)
 				}
-				tr.transform(buf, false)
+				tr.Transform(buf, false)
 				for k := range sum[c] {
 					a := cmplx.Abs(buf[k])
 					sum[c][k] += a * a
@@ -208,13 +160,13 @@ type channel struct {
 }
 
 // push adds hop new samples and returns the hop samples that are complete.
-func (c *channel) push(block []float64, tr *fft, win []float64, buf []complex128, gain []float64) []float64 {
+func (c *channel) push(block []float64, tr *dsp.FFT, win []float64, buf []complex128, gain []float64) []float64 {
 	copy(c.in, c.in[hop:])
 	copy(c.in[fftSize-hop:], block)
 	for i := range buf {
 		buf[i] = complex(c.in[i]*win[i], 0)
 	}
-	tr.transform(buf, false)
+	tr.Transform(buf, false)
 	half := fftSize / 2
 	for k := 0; k <= half; k++ {
 		p := real(buf[k])*real(buf[k]) + imag(buf[k])*imag(buf[k])
@@ -241,7 +193,7 @@ func (c *channel) push(block []float64, tr *fft, win []float64, buf []complex128
 			buf[fftSize-k] *= a
 		}
 	}
-	tr.transform(buf, true)
+	tr.Transform(buf, true)
 	for i := range c.acc {
 		c.acc[i] += real(buf[i]) / fftSize * win[i] / 2
 	}
@@ -293,7 +245,7 @@ func Process(ctx context.Context, src, dst string, plan Plan, progress func(done
 	ch, bps := format.Channels, format.BitDepth/8
 	scale := float64(int64(1) << (format.BitDepth - 1))
 	limit := int64(scale) - 1
-	win, tr := sqrtHann(), newFFT(fftSize)
+	win, tr := sqrtHann(), dsp.NewFFT(fftSize)
 	buf := make([]complex128, fftSize)
 	gain := make([]float64, fftSize/2+1)
 	chans := make([]*channel, ch)

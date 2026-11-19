@@ -183,6 +183,7 @@ func TestSizeLimitStopsRecordingCleanly(t *testing.T) {
 	_ = svc.Start("A", false)
 	_ = src.Emit(frames(150)) // 600 bytes > cap
 	waitFor(t, "stop at cap", func() bool { return svc.Status().State == StateMetering })
+	waitFor(t, "error event", func() bool { return len(ev.errors()) > 0 })
 	errs := ev.errors()
 	if len(errs) == 0 || !strings.Contains(errs[0], "4 GiB") {
 		t.Fatalf("errors: %v", errs)
@@ -565,5 +566,113 @@ func TestEmptyTakeErrorFollowsLanguage(t *testing.T) {
 	i18n.SetLocale(i18n.Ukrainian)
 	if !strings.Contains(ErrEmptyTake.Error(), "порожній") {
 		t.Fatalf("got %q", ErrEmptyTake)
+	}
+}
+
+// level returns one second of stereo 16-bit audio (1000 Hz test rate) as a
+// square wave of the given amplitude.
+func level(amp int16) []byte {
+	b := make([]byte, 4000)
+	for i := 0; i < 1000; i++ {
+		v := amp
+		if i%2 == 1 {
+			v = -amp
+		}
+		for c := 0; c < 2; c++ {
+			o := i*4 + c*2
+			b[o], b[o+1] = byte(uint16(v)), byte(uint16(v)>>8)
+		}
+	}
+	return b
+}
+
+func emitSeconds(t *testing.T, src *audio.FakeSource, amp int16, n int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		if err := src.Emit(level(amp)); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func autoSetup(t *testing.T, on bool) (*Service, *audio.FakeSource, *project.Project) {
+	t.Helper()
+	svc, src, p, _ := setup(t)
+	svc.SetAutoStop(on, 5*time.Second)
+	if err := svc.OpenInput("d1", "USB", stereo16); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Start("A", false); err != nil {
+		t.Fatal(err)
+	}
+	return svc, src, p
+}
+
+const music, hiss = 10000, 30
+
+func TestAutoStopTrimsTheSilentTail(t *testing.T) {
+	stopped := make(chan struct{}, 1)
+	svc, src, p := autoSetup(t, true)
+	svc.h.OnStopped = func() { stopped <- struct{}{} }
+	emitSeconds(t, src, music, 40)
+	emitSeconds(t, src, hiss, 8)
+	waitFor(t, "auto-stop", func() bool { return svc.Status().State == StateMetering })
+	<-stopped
+	if st := svc.Status(); st.AutoStoppedSide != "A" {
+		t.Fatalf("status %+v", st)
+	}
+	side := p.Info().Sides["A"]
+	if side.DurationMs != 42_000 {
+		t.Fatalf("duration %d ms, want 42000 (2 s of tail kept)", side.DurationMs)
+	}
+	if err := svc.Start("A", true); err != nil {
+		t.Fatal(err)
+	}
+	if svc.Status().AutoStoppedSide != "" {
+		t.Fatal("notice not cleared by the next take")
+	}
+}
+
+func TestAutoStopIgnoresShortQuietPassage(t *testing.T) {
+	svc, src, _ := autoSetup(t, true)
+	emitSeconds(t, src, music, 40)
+	emitSeconds(t, src, hiss, 4)
+	emitSeconds(t, src, music, 5)
+	waitFor(t, "data", func() bool { return svc.Status().ElapsedMs == 49_000 })
+	if svc.Status().State != StateRecording {
+		t.Fatal("stopped on a quiet passage shorter than the interval")
+	}
+}
+
+func TestAutoStopPauseResetsSilence(t *testing.T) {
+	svc, src, _ := autoSetup(t, true)
+	emitSeconds(t, src, music, 40)
+	emitSeconds(t, src, hiss, 3)
+	waitFor(t, "data", func() bool { return svc.Status().ElapsedMs == 43_000 })
+	_ = svc.Pause()
+	_ = svc.Resume()
+	emitSeconds(t, src, hiss, 3)
+	waitFor(t, "data", func() bool { return svc.Status().ElapsedMs == 46_000 })
+	if svc.Status().State != StateRecording {
+		t.Fatal("silence before the pause counted")
+	}
+}
+
+func TestAutoStopDisabled(t *testing.T) {
+	svc, src, _ := autoSetup(t, false)
+	emitSeconds(t, src, music, 40)
+	emitSeconds(t, src, hiss, 10)
+	waitFor(t, "data", func() bool { return svc.Status().ElapsedMs == 50_000 })
+	if svc.Status().State != StateRecording {
+		t.Fatal("stopped while auto-stop is off")
+	}
+}
+
+func TestAutoStopNotBeforeArming(t *testing.T) {
+	svc, src, _ := autoSetup(t, true)
+	emitSeconds(t, src, hiss, 20)
+	waitFor(t, "data", func() bool { return svc.Status().ElapsedMs == 20_000 })
+	if svc.Status().State != StateRecording {
+		t.Fatal("stopped during the first 30 s")
 	}
 }

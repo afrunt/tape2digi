@@ -4,10 +4,12 @@ package exporter
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/afrunt/tape2digi/internal/i18n"
 	"github.com/afrunt/tape2digi/internal/project"
 	"github.com/afrunt/tape2digi/internal/wav"
 )
@@ -182,12 +184,110 @@ func uniqueNames(names []string) []string {
 	return out
 }
 
-// TrackFileName is "NN - Title.ext", or "Track NN.ext" for a track without a title.
-func TrackFileName(t Track, ext string) string {
-	if name := SafeName(t.Title); name != "" {
-		return fmt.Sprintf("%02d - %s%s", t.Num, name, ext)
+// DefaultNameTemplate names track files "NN - Title".
+const DefaultNameTemplate = "{n} - {title}"
+
+// MaxTemplateLen limits a file name template.
+const MaxTemplateLen = 100
+
+var templateToken = regexp.MustCompile(`\{[^{}]*\}`)
+
+var templateTokens = map[string]bool{"{n}": true, "{title}": true, "{artist}": true, "{album}": true, "{year}": true, "{side}": true}
+
+// CheckTemplate validates a file name template: known tokens only, no folder
+// separators or characters that are not allowed in file names.
+func CheckTemplate(tmpl string) error {
+	tmpl = strings.TrimSpace(tmpl)
+	switch {
+	case tmpl == "":
+		return i18n.New("export.templateEmpty")
+	case utf8.RuneCountInString(tmpl) > MaxTemplateLen:
+		return i18n.New("export.templateTooLong", MaxTemplateLen)
+	}
+	for _, r := range templateToken.ReplaceAllString(tmpl, "") {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"/\|?*{}`, r) {
+			return i18n.New("export.templateChars")
+		}
+	}
+	for _, tok := range templateToken.FindAllString(tmpl, -1) {
+		if !templateTokens[tok] {
+			return i18n.New("export.templateToken", tok)
+		}
+	}
+	return nil
+}
+
+// TrackFileName names a track file from the template (the default when it
+// is empty or invalid). Every token value is made safe for file names; a track
+// without a title is "Track NN" whatever the template.
+func TrackFileName(in Input, t Track, tmpl, ext string) string {
+	if t.Title == "" || SafeName(t.Title) == "" {
+		return fmt.Sprintf("Track %02d%s", t.Num, ext)
+	}
+	if CheckTemplate(tmpl) != nil {
+		tmpl = DefaultNameTemplate
+	}
+	side := ""
+	if t.Side != nil {
+		side = t.Side.Key
+	}
+	vals := map[string]string{
+		"{n}": fmt.Sprintf("%02d", t.Num), "{title}": t.Title, "{artist}": t.Artist,
+		"{album}": in.AlbumName(), "{year}": in.Year, "{side}": side,
+	}
+	if name := SafeName(expandTemplate(strings.TrimSpace(tmpl), vals)); name != "" {
+		return name + ext
 	}
 	return fmt.Sprintf("Track %02d%s", t.Num, ext)
+}
+
+// expandTemplate replaces the tokens; an empty value also drops the literal
+// text that only separated it, so "{artist} - {title}" without an artist is
+// just the title.
+func expandTemplate(tmpl string, vals map[string]string) string {
+	type part struct {
+		text  string
+		token bool
+	}
+	var parts []part
+	last := 0
+	for _, loc := range templateToken.FindAllStringIndex(tmpl, -1) {
+		if loc[0] > last {
+			parts = append(parts, part{tmpl[last:loc[0]], false})
+		}
+		if v := SafeName(vals[tmpl[loc[0]:loc[1]]]); v != "" {
+			parts = append(parts, part{v, true})
+		} else {
+			parts = append(parts, part{"", true})
+		}
+		last = loc[1]
+	}
+	if last < len(tmpl) {
+		parts = append(parts, part{tmpl[last:], false})
+	}
+	var kept []part
+	for _, p := range parts {
+		if p.token && p.text == "" {
+			continue
+		}
+		// Two literals meet where an empty token was: keep one separator.
+		if !p.token && len(kept) > 0 && !kept[len(kept)-1].token {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	sep := func(p part) bool { return !p.token && strings.Trim(p.text, " -_.,;") == "" }
+	for len(kept) > 0 && sep(kept[0]) {
+		kept = kept[1:]
+	}
+	for len(kept) > 0 && sep(kept[len(kept)-1]) {
+		kept = kept[:len(kept)-1]
+	}
+	var b strings.Builder
+	for _, p := range kept {
+		b.WriteString(p.text)
+	}
+	return b.String()
 }
 
 func (in Input) albumBase() string {
@@ -213,7 +313,7 @@ func (in Input) FilesFor(opts Options) []string {
 			ext = ".mp3"
 		}
 		for _, t := range in.Tracks() {
-			names = append(names, TrackFileName(t, ext))
+			names = append(names, TrackFileName(in, t, opts.NameTemplate, ext))
 		}
 	case FormatFLACCue:
 		names = []string{in.albumBase() + ".flac", in.albumBase() + ".cue"}

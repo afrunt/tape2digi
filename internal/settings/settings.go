@@ -2,6 +2,10 @@
 package settings
 
 import (
+	"encoding/json"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/afrunt/tape2digi/internal/appdata"
 )
 
@@ -37,7 +41,39 @@ type Settings struct {
 	EditorWindow *Rect `json:"editorWindow,omitempty"`
 	// Export holds the last export choices; nil means the defaults.
 	Export *ExportPrefs `json:"export,omitempty"`
+	// AutoStop ends a take after AutoStopSec seconds of end-of-tape silence.
+	AutoStop    bool `json:"autoStop"`
+	AutoStopSec int  `json:"autoStopSec"`
+	// OnlineLookup allows sending the artist and album text to MusicBrainz.
+	OnlineLookup bool `json:"onlineLookup"`
+	// ExportPresets are named export choices (without the target folder).
+	ExportPresets []ExportPreset `json:"exportPresets,omitempty"`
 }
+
+// ExportPreset is a named set of export choices.
+type ExportPreset struct {
+	Name  string      `json:"name"`
+	Prefs ExportPrefs `json:"prefs"`
+}
+
+// Preset limits.
+const (
+	MaxPresets       = 20
+	MaxPresetNameLen = 50
+)
+
+// PresetName trims a preset name and reports whether it is usable.
+func PresetName(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	n := utf8.RuneCountInString(s)
+	return s, n >= 1 && n <= MaxPresetNameLen
+}
+
+// Allowed auto-stop interval in seconds.
+const (
+	MinAutoStopSec = 10
+	MaxAutoStopSec = 600
+)
 
 // ExportPrefs are the export dialog choices that are remembered.
 type ExportPrefs struct {
@@ -48,11 +84,33 @@ type ExportPrefs struct {
 	EmbedCover bool    `json:"embedCover"`
 	// ExportOriginal adds the original side recordings; off by default.
 	ExportOriginal bool `json:"exportOriginal"`
+	// ReplayGain writes loudness tags; on by default.
+	ReplayGain bool `json:"replayGain"`
+	// NameTemplate names the track files ("{n} - {title}" by default).
+	NameTemplate string `json:"nameTemplate"`
 }
+
+// DefaultNameTemplate matches the exporter default; settings do not import
+// the exporter.
+const DefaultNameTemplate = "{n} - {title}"
 
 // DefaultExport is used until the user exports for the first time.
 func DefaultExport() ExportPrefs {
-	return ExportPrefs{Format: "mp3", Bitrate: 320, CoverMaxMB: 1, EmbedCover: true}
+	return ExportPrefs{Format: "mp3", Bitrate: 320, CoverMaxMB: 1, EmbedCover: true, ReplayGain: true, NameTemplate: DefaultNameTemplate}
+}
+
+// UnmarshalJSON keeps the defaults of fields that older settings lack.
+func (e *ExportPrefs) UnmarshalJSON(b []byte) error {
+	type plain ExportPrefs
+	p := plain{ReplayGain: true}
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	if p.NameTemplate == "" {
+		p.NameTemplate = DefaultNameTemplate
+	}
+	*e = ExportPrefs(p)
+	return nil
 }
 
 // Minimum main window size, matching the window options.
@@ -91,7 +149,7 @@ func Visible(r Rect, screenWidths []int, maxHeight int) bool {
 
 // Defaults are used when nothing valid is stored.
 func Defaults() Settings {
-	return Settings{SampleRate: 44100, Channels: 2, BitDepth: 16, Language: "en", Theme: "dark", FontScale: 100}
+	return Settings{SampleRate: 44100, Channels: 2, BitDepth: 16, Language: "en", Theme: "dark", FontScale: 100, AutoStop: true, AutoStopSec: 60}
 }
 
 // Normalize replaces unsupported values with defaults.
@@ -120,6 +178,7 @@ func (s Settings) Normalize() Settings {
 	if s.FontScale > MaxFontScale {
 		s.FontScale = MaxFontScale
 	}
+	s.AutoStopSec = min(max(s.AutoStopSec, MinAutoStopSec), MaxAutoStopSec)
 	if s.Window != nil && (s.Window.W < MinWindowWidth || s.Window.H < MinWindowHeight) {
 		s.Window.W = max(s.Window.W, MinWindowWidth)
 		s.Window.H = max(s.Window.H, MinWindowHeight)
@@ -128,22 +187,43 @@ func (s Settings) Normalize() Settings {
 		s.EditorWindow = nil
 	}
 	if s.Export != nil {
-		e, d := *s.Export, DefaultExport()
-		if e.Format != "wav" && e.Format != "mp3" && e.Format != "flac-cue" {
-			e.Format = d.Format
-		}
-		if e.Bitrate != 128 && e.Bitrate != 192 && e.Bitrate != 256 && e.Bitrate != 320 {
-			e.Bitrate = d.Bitrate
-		}
-		if e.WAVRate != 0 && e.WAVRate != 44100 && e.WAVRate != 48000 && e.WAVRate != 88200 && e.WAVRate != 96000 {
-			e.WAVRate = 0
-		}
-		if !(e.CoverMaxMB > 0 && e.CoverMaxMB <= 50) {
-			e.CoverMaxMB = d.CoverMaxMB
-		}
+		e := s.Export.Normalize()
 		s.Export = &e
 	}
+	// Presets: usable names only, unique ignoring case, at most MaxPresets.
+	var presets []ExportPreset
+	seen := map[string]bool{}
+	for _, p := range s.ExportPresets {
+		name, ok := PresetName(p.Name)
+		if !ok || seen[strings.ToLower(name)] || len(presets) == MaxPresets {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		presets = append(presets, ExportPreset{Name: name, Prefs: p.Prefs.Normalize()})
+	}
+	s.ExportPresets = presets
 	return s
+}
+
+// Normalize replaces unsupported export choices with defaults.
+func (e ExportPrefs) Normalize() ExportPrefs {
+	d := DefaultExport()
+	if e.Format != "wav" && e.Format != "mp3" && e.Format != "flac-cue" {
+		e.Format = d.Format
+	}
+	if e.Bitrate != 128 && e.Bitrate != 192 && e.Bitrate != 256 && e.Bitrate != 320 {
+		e.Bitrate = d.Bitrate
+	}
+	if e.WAVRate != 0 && e.WAVRate != 44100 && e.WAVRate != 48000 && e.WAVRate != 88200 && e.WAVRate != 96000 {
+		e.WAVRate = 0
+	}
+	if !(e.CoverMaxMB > 0 && e.CoverMaxMB <= 50) {
+		e.CoverMaxMB = d.CoverMaxMB
+	}
+	if e.NameTemplate = strings.TrimSpace(e.NameTemplate); e.NameTemplate == "" || utf8.RuneCountInString(e.NameTemplate) > 100 {
+		e.NameTemplate = d.NameTemplate
+	}
+	return e
 }
 
 // Store loads and saves Settings in an app data directory.
@@ -154,7 +234,8 @@ func NewStore(dir appdata.Dir) *Store { return &Store{dir: dir} }
 
 // Load returns stored settings, or defaults when the file is missing or corrupt.
 func (s *Store) Load() Settings {
-	var v Settings
+	// Fields missing from an older file keep their defaults.
+	v := Defaults()
 	if err := appdata.ReadJSON(s.dir.File(fileName), &v); err != nil {
 		return Defaults()
 	}

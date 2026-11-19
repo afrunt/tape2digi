@@ -8,6 +8,7 @@
     ChooseFolder,
     ClearCover,
     CloseProject,
+    DeleteSide,
     DiscardChanges,
     EditHistoryLast,
     DiscardPart,
@@ -26,8 +27,11 @@
     RevealSide,
     SaveProject,
     SetCover,
+    SetOnlineLookup,
+    SetTracksReady,
     SetMonitor,
     SetMonitorDevice,
+    SetAutoStop,
     StartRecording,
     UndoLast,
     Status,
@@ -141,6 +145,9 @@
   hooks.exportTracks = () => {
     if (!stepBlocked && hasTracks && !dialogOpen()) ui.exportOpen = true
   }
+  hooks.lookUp = () => {
+    if (!stepBlocked && hasTracks) void lookUpTracks()
+  }
   const onUndo = () => void stepLast(true, true)
   const onRedo = () => void stepLast(false, true)
   hooks.undoMain = onUndo
@@ -151,6 +158,7 @@
     if (hooks.undoMain === onUndo) hooks.undoMain = null
     if (hooks.redoMain === onRedo) hooks.redoMain = null
     hooks.exportTracks = null
+    hooks.lookUp = null
   })
 
   onMount(async () => {
@@ -160,6 +168,9 @@
     bitDepth = s.bitDepth
     deviceName = s.deviceName
     outputName = s.monitorDeviceName
+    autoStop = s.autoStop
+    autoStopSec = s.autoStopSec
+    autoStopText = formatInterval(s.autoStopSec)
     await refreshDevices()
     ready = true
     await openInput()
@@ -223,6 +234,32 @@
     await openInput()
   }
 
+  let autoStop = $state(true)
+  let autoStopSec = $state(60)
+  let autoStopText = $state('1:00')
+  let autoStopError = $state('')
+
+  function formatInterval(sec: number): string {
+    return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`
+  }
+
+  async function saveAutoStop() {
+    const m = /^\s*(\d{1,2})(?::([0-5]\d))?\s*$/.exec(autoStopText)
+    const sec = m ? Number(m[1]) * 60 + Number(m[2] ?? 0) : NaN
+    if (!(sec >= 10 && sec <= 600)) {
+      autoStopError = t('rec.autoStopRange')
+      return
+    }
+    autoStopError = ''
+    autoStopSec = sec
+    autoStopText = formatInterval(sec)
+    try {
+      await SetAutoStop(autoStop, sec)
+    } catch (e) {
+      ui.error = errText(e)
+    }
+  }
+
   async function toggleMonitor(on: boolean) {
     try {
       await SetMonitor(on)
@@ -239,6 +276,15 @@
       ui.error = errText(e)
     }
     ui.status = await Status()
+  }
+
+  async function deleteSide(side: string) {
+    if (!(await yesNo(t('rec.deleteTitle', { side }), t('rec.deleteText', { side }), t('rec.deleteYes')))) return
+    try {
+      ui.project = await serial(() => DeleteSide(side))
+    } catch (e) {
+      ui.error = errText(e)
+    }
   }
 
   async function yesNo(title: string, message: string, yes: string, danger = true) {
@@ -330,6 +376,10 @@
   )
   $effect(() => {
     void ui.project
+    void SetTracksReady(hasTracks).catch(() => {})
+  })
+  $effect(() => {
+    void ui.project
     EditHistoryLast()
       .then((h) => (last = h))
       .catch(() => (last = { canUndo: false, canRedo: false, undoSide: '', redoSide: '' }))
@@ -401,6 +451,21 @@
     }
   }
 
+  async function lookUpTracks() {
+    if (dialogOpen()) return
+    if (!ui.onlineLookup) {
+      if (!(await yesNo(t('lookup.consentTitle'), t('lookup.consentText'), t('lookup.consentYes'), false))) return
+      try {
+        await SetOnlineLookup(true)
+        ui.onlineLookup = true
+      } catch (e) {
+        ui.error = errText(e)
+        return
+      }
+    }
+    ui.lookupOpen = true
+  }
+
   async function removeCover() {
     try {
       ui.project = await serial(() => ClearCover())
@@ -448,7 +513,7 @@
   // One flow at a time: a second menu shortcut or click while a picker or
   // question is open is ignored.
   let flow = false
-  const dialogOpen = () => !!(ui.ask || ui.saveAsOpen || ui.exportOpen || ui.quit || ui.edit)
+  const dialogOpen = () => !!(ui.ask || ui.saveAsOpen || ui.exportOpen || ui.lookupOpen || ui.quit || ui.edit)
 
   async function close() {
     if (flow || dialogOpen()) return
@@ -504,6 +569,7 @@
   <button onclick={openOther}>{t('openProject')}</button>
   <button onclick={save} disabled={!ui.project?.dirty || !!nameError || !!detailsError || yearInvalid || albumInvalid || genreInvalid}>{t('save')}</button>
   <button onclick={() => (ui.saveAsOpen = true)} disabled={busy}>{t('saveAs')}</button>
+  <button onclick={lookUpTracks} disabled={busy || !!ui.job || !hasTracks} title={t('lookup.buttonTitle')}>{t('lookup.button')}</button>
   <button onclick={() => (ui.exportOpen = true)} disabled={stepBlocked || !hasTracks} title={t('export.buttonTitle')}>{t('export.button')}</button>
 </header>
 
@@ -691,6 +757,22 @@
             </select>
           </label>
         </div>
+        <div class="row autostop">
+          <label class="check">
+            <input type="checkbox" bind:checked={autoStop} onchange={saveAutoStop} />
+            {t('rec.autoStop')}
+          </label>
+          <input
+            class="interval"
+            aria-label={t('rec.autoStopInterval')}
+            title={t('rec.autoStopTitle')}
+            bind:value={autoStopText}
+            onchange={saveAutoStop}
+            disabled={!autoStop}
+          />
+          <span class="muted small">{t('rec.autoStopUnit')}</span>
+          {#if autoStopError}<span class="error small">{autoStopError}</span>{/if}
+        </div>
       {/if}
     </section>
   </div>
@@ -707,6 +789,9 @@
               {info.missing ? t('side.fileMissing') : ''}{info.staged ? t('side.notSaved') : ''}{info.origin === 'imported' ? t('side.imported') : t('side.recorded')}{info.sourceName ? t('side.from', { name: info.sourceName }) : ''} ·
               {formatDuration(info.durationMs)} · {info.sampleRate} {t('unit.hz')} · {info.channels === 1 ? t('side.mono') : t('side.stereo')} · {info.bitDepth} {t('unit.bit')} · {when(info.recordedAt)}
             </span>
+            {#if !info.missing && ui.clips[side]?.count}
+              <span class="clips" title={t('side.clipsHint')}>· {t('side.clips', { n: ui.clips[side].count })}</span>
+            {/if}
           {:else}
             {t('side.empty')}
           {/if}
@@ -723,8 +808,12 @@
             <button onclick={() => importFile(side)} disabled={busy}>{t('rec.import')}</button>
             <button onclick={() => (ui.edit = side)} disabled={!info || info.missing || ![16, 24].includes(info.bitDepth) || !!ui.job || busy}>{t('rec.edit')}</button>
             <button onclick={() => run(() => RevealSide(side))} disabled={!info || info.missing}>{t('rec.reveal')}</button>
+            <button class="danger" onclick={() => deleteSide(side)} disabled={!info || busy || !!ui.job}>{t('rec.delete')}</button>
           {/if}
         </div>
+        {#if !active && ui.status.autoStoppedSide === side}
+          <p class="muted small">{t('rec.autoStopped', { time: formatInterval(autoStopSec) })}</p>
+        {/if}
         <TrackTable {side} />
       </section>
     {/each}
@@ -774,7 +863,8 @@
     max-width: 100%;
   }
   .monitor,
-  .formats {
+  .formats,
+  .autostop {
     margin-top: 12px;
     flex-wrap: wrap;
   }
@@ -783,6 +873,9 @@
     align-items: center;
     gap: 6px;
     color: var(--text);
+  }
+  .interval {
+    width: 5em;
   }
   .formats label {
     display: flex;
@@ -803,6 +896,10 @@
   .field > label {
     display: block;
   }
+  .clips {
+    color: var(--warning);
+  }
+
   .field > .error {
     margin: 4px 0 0;
   }

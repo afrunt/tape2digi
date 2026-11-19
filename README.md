@@ -2,6 +2,8 @@
 
 **Digitise your audio cassettes with a few clicks.**
 
+**[⬇ Download](https://github.com/afrunt/tape2digi/releases)** for macOS, Windows and Linux.
+
 English (US) · [Українська](#tape2digi-українська)
 
 ![tape2digi main window](docs/screenshot.png)
@@ -16,24 +18,27 @@ It runs on macOS, Windows and Linux (amd64 and arm64), has an Islands Dark and I
 
 * **Any input**: line-in, microphone or any capture device, with live left/right level meters (one bar for mono).
 * **Monitor**: optionally listen to the input on the output you choose, with no effect on the recording.
-* **Recording per side**: side A and side B, with pause, resume and stop; 44.1/48/96 kHz, mono or stereo, 16 or 24 bit. Recordings are saved as WAV.
+* **Recording per side**: side A and side B, with pause, resume and stop; 44.1/48/96 kHz, mono or stereo, 16 or 24 bit. Recordings are saved as WAV. **Auto-stop** ends a take after the silence at the end of the tape side (1 minute by default).
 * **Import**: convert an existing WAV, MP3, FLAC or Ogg Vorbis file into a side.
 * **Projects**: one folder per tape, with name, artist, album, year, genre, cover image and a "Compilation" mode for tapes with various artists.
-* **Side editor**: waveform with zoom, track start/end markers, **Amplify**, **Split** (finds the gaps between songs), **Fix Noise** (removes steady hiss and hum) and **Reset**.
-* **Track table**: editable title, artist and album artist per track, with durations and totals.
+* **Online track lookup** (optional, off until you enable it): find the release on MusicBrainz, fill the track titles and cover, and split a side by the listed track lengths.
+* **Side editor**: waveform with zoom, track start/end markers, **Amplify**, **Split** (finds the gaps between songs), **Fix Noise** (removes steady hiss and hum), **Normalize** (loudness target in LUFS), **Repair** (DC offset, hum, channel balance, azimuth, mono) and **Reset**; a spectrogram view, clip markers and keyboard shortcuts.
+* **Track table**: editable title, artist and album artist per track, with durations and totals; paste a whole track list at once or number the untitled tracks.
 * **Track player**: preview a single track.
 * **Undo / Redo**: up to 100 steps per side, plus project-form edits such as the Compilation checkbox.
-* **Export**: WAV (original or resampled), MP3 (128–320 kbps) or FLAC with a CUE sheet; ID3v2.4 tags, embedded and `cover.png` cover, and an optional copy of the original recordings.
+* **Export**: WAV (original or resampled), MP3 (128–320 kbps) or FLAC with a CUE sheet; ID3v2.4 tags, embedded and `cover.png` cover, and an optional copy of the original recordings; ReplayGain tags, a file name template and export presets.
 
 ## Why tape2digi
 
 * Built for tapes: side A/B, track marking and noise reduction in one place instead of juggling a recorder and an audio editor.
 * Safe by design: recordings go to a temporary file and replace the project's audio only when you press **Save**; a take left by a crash can be recovered.
 * Nothing is changed by exporting: the project stays as it is.
-* Small, native-feeling and self-contained: no account, no cloud, all data stays on your machine.
+* Small, native-feeling and self-contained: no account, all data stays on your machine. The only network access is the optional track lookup, which is off until you enable it and sends just the artist and album text you search for.
 * Works the same on macOS, Windows and Linux.
 
 ## Quick start
+
+Download the app for your platform from the [Releases page](https://github.com/afrunt/tape2digi/releases).
 
 1. Launch tape2digi and choose **New project** (a folder and a name), or **Open project** / a recent project.
 2. Select the input device and check that the meters move.
@@ -50,13 +55,22 @@ It runs on macOS, Windows and Linux (amd64 and arm64), has an Islands Dark and I
 * Set an optional cover image (PNG/JPEG, up to 20 MB).
 * Name, cover and these fields are staged as you type and the header **Save** button enables at once. **Save** (`Cmd/Ctrl+S`) writes them; **Save As…** (`Cmd/Ctrl+Shift+S`) copies the whole project, with those edits, to a new folder and opens the copy. Closing the project or the app with unsaved edits asks first.
 
+### Online track lookup
+
+* **Look up tracks…** (project toolbar button right before Export, and the **File** menu item before Export; enabled once a side has at least one complete track) searches [MusicBrainz](https://musicbrainz.org) for the release by the project's Artist and Album. Online lookup is off by default: the first use asks for consent, and it can be switched on or off at any time with **Tools → Online Track Lookup**. Only the search text (artist and album) is sent, and the cover is downloaded from the Cover Art Archive; no audio or other data leaves the computer.
+* The dialog lists the matching releases (title, artist, year, country, formats, track count). Choosing one shows how its tracks map to side A and side B (two media, or one medium split by `A`/`B` numbers or by the recorded side lengths; for releases with more media you choose which ones). **Apply** fills the titles (and differing track artists) of the marked tracks in order as one undoable step per side, fills only empty Artist, Album and Year, and optionally uses the release cover (on when the project has no cover).
+* The listing is saved with the side.
+
 ### Recording
 
 * Select the input device; the meter beside it shows left/right levels (one bar for mono). Defaults are 44.1 kHz, stereo, 16-bit; sample rate (44.1/48/96 kHz), channels and bit depth (16/24) can be changed before recording.
 * **Monitor** (off by default, never remembered) plays the input on the output chosen in the dropdown next to it. **System default** is preselected and means the system's current default output at the moment the monitor starts; a specific device is remembered by name and falls back to the default if missing. Changing it while the monitor is on moves the sound without touching the recording. Whether a running monitor follows a later change of the system default output depends on the OS audio backend; toggle Monitor or reselect the output if it does not. Avoid it with a microphone near speakers: it can cause feedback.
 * Press **Record side A** or **Record side B**; pause, resume and stop as needed. If a side is already recorded you are asked before it is overwritten.
+* **Auto-stop on silence** (on by default) stops the take by itself after the set **Silence before auto-stop** (m:ss, 0:10 to 10:00, 1:00 by default) once the take is at least 30 s long, and trims the silent tail to 2 s. The threshold adapts to the tape's own noise floor; pausing resets the silent stretch. A notice on the side tells you when a take was stopped this way.
+* After a take, import or edit the side is checked for clipping in the background; a **Clipping: N** badge on the side shows how many clipped places were found.
 * Recorded and imported audio is kept in temporary files in the hidden `.tape2digi-staging` folder and marks the project as changed; only **Save** moves it into `side-A.wav` / `side-B.wav`, and discarding drops it. If the app is killed during a take, the next time the project is opened it offers to recover (**Recover**) or delete the unsaved take.
 * **Import…** on a side converts an existing file (WAV, MP3, FLAC, Ogg Vorbis; Ogg Opus is not supported) into that side's WAV. The sample rate is kept; output is 16-bit, or 24-bit for 24-bit/float sources; sources with more than two channels are mixed down to stereo. Import can be cancelled.
+* **Delete** on a side removes its recording (with its track marks and titles) after a confirmation. Like other changes it is staged: the side disappears at once, **Undo** brings it back, **Discard** cancels it, and only **Save** deletes `side-A.wav` / `side-B.wav` from disk for good. It is disabled while recording or while a job runs.
 * On macOS the first run asks for microphone permission. If it was denied, enable it in System Settings → Privacy & Security → Microphone.
 
 ### Editing a side
@@ -67,14 +81,20 @@ It runs on macOS, Windows and Linux (amd64 and arm64), has an Islands Dark and I
 * **Markers**: right click opens a menu to insert a track start or end marker (markers alternate start, end, start, end: a start goes only after the last end or into an empty list, an end only after the open start). Drag a marker to move it; it cannot pass its neighbours. Right click a marker and choose **Delete marker**: deleting a start also deletes its end, an end can be deleted only when it is the last marker and then leaves its start open. Markers are stored per side in `tape2digi.json` as `markers` and count as unsaved changes until **Save**.
 * **Amplify** raises both channels by the largest gain that does not clip (like Audacity's Amplify, shown in dB) and is disabled when the side is already at its maximum or silent. The amplified audio is a temporary copy; **Save** applies it, **Discard** restores the original.
 * **Split** analyses the recording for gaps between tracks (silence of at least 2 s, much quieter than the music) and replaces the markers with a start and end per track in one step that **Undo** reverts; it stays disabled when no clear gaps are found.
+* **Normalize…** measures the side's integrated loudness (EBU R 128 / BS.1770) and sets it to a target from -23 to -9 LUFS (default -18) with one gain, capped so the peak stays at or below -1 dBFS; the panel shows the measured loudness, peak and gain. It is undoable like Amplify.
+* **Repair…** analyses the side and offers only what it finds: **DC offset** removal, a **Hum** notch filter at 50 or 60 Hz and its harmonics, **Balance** of the quieter channel (editable, ±6 dB), **Azimuth** (aligns a channel delayed by a tilted tape head) and **Mono** from left, right or a mix. Each tool is applied separately and can be undone.
+* **Spectrogram**: the **Waveform** / **Spectrogram** switch shows the frequencies of the side over time, which makes hum (low lines), hiss (haze at the top) and clicks (vertical streaks) easy to see; it follows zoom and scroll.
+* **Clips**: clipped places are marked on the ruler, and **Next clip** moves the playhead to the next one.
+* **Keys**: `S` / `E` add a start / end marker at the playhead, `[` and `]` jump to the previous / next marker, `Space` plays or pauses.
 * **Fix Noise** removes steady tape noise (hiss and hum): it measures the noise in the quiet stretches (the pauses between tracks and the lead-in), subtracts that spectrum from the whole side and can be reverted with **Undo**. It stays disabled when no steady noise pattern is found (for example no quiet stretches) or the noise is already low, so it is also disabled after a successful run. Some hiss under loud music remains.
 * **Reset** removes all markers of the side (with the track titles and artists stored on them) in one step that **Undo** reverts; it is disabled when there are no markers.
-* **Undo / Redo** (icon buttons at the left of the bottom bar next to the unsaved-changes dot, the **Edit** menu, `Cmd/Ctrl+Z`; redo `Cmd+Shift+Z` on macOS, `Ctrl+Y` elsewhere) revert marker insert, delete, move, Split, Amplify and Fix Noise, up to 100 steps per side until Save or Discard. With the editor closed they revert and reapply the most recent editor change of either side (the one changed last).
+* **Undo / Redo** (icon buttons at the left of the bottom bar next to the unsaved-changes dot, the **Edit** menu, `Cmd/Ctrl+Z`; redo `Cmd+Shift+Z` on macOS, `Ctrl+Y` elsewhere) revert marker insert, delete, move, Split, Amplify, Fix Noise and side deletion, up to 100 steps per side until Save or Discard. With the editor closed they revert and reapply the most recent editor change of either side (the one changed last).
 
 ### Track table and player
 
 * Once a side has start and end markers, a **track table** appears under that side's controls: `#` (continuing from side A to side B), editable `Title`, `Artist` and `Album Artist` (empty artist cells show the project's Artist unless the project is a compilation; typing replaces it), and the read-only `Duration` (`HH:mm:SS`), with the track count and total duration below.
 * The table follows every marker change made in the editor; titles are saved with the markers (so Split, which replaces all markers, clears them, and Undo brings them back).
+* **Name tracks…** under a side's table takes a pasted list, one title per line: **Apply list** titles the tracks in order (leading numbers such as `1.`, `01 -` or `A1` are removed) and reports lines left over; **Number untitled** names only the empty titles `Track N`. Each is one undo step.
 * The play button at the end of a track row opens a player for that track alone: Play/Pause, Stop, click or drag on the waveform to move the playhead, and the same zoom as the editor.
 
 ### Exporting
@@ -84,7 +104,9 @@ It runs on macOS, Windows and Linux (amd64 and arm64), has an Islands Dark and I
 * **WAV**: one file per track, in the recorded format or resampled to 44.1, 48, 88.2 or 96 kHz with the same bit depth.
 * **MP3**: one file per track, constant bitrate 128/192/256/320 kbps (320 by default); unavailable for sample rates the encoder cannot handle, such as 96 kHz.
 * **FLAC + CUE**: one FLAC image of the whole album, side A then B, plus a `.cue` sheet; both sides must share one format.
-* WAV and MP3 files are named `NN - Title.ext` and carry ID3v2.4 tags (title, artist, album artist, album, year, genre, track number, compilation) and optionally the cover. For WAV and MP3 the dialog has a **Maximum cover size (MB)** field (1 MB by default); a larger cover is scaled down proportionally before embedding, while `cover.png` and FLAC keep the original. FLAC carries the same tags as Vorbis comments and the cue sheet.
+* WAV and MP3 files are named by the **File names** template, `{n} - {title}` by default; the tokens are `{n}` (two-digit number), `{title}`, `{artist}`, `{album}`, `{year}` and `{side}`, separators next to an empty token are dropped, and a track without a title is `Track NN`. The dialog shows the first file name as you type; an invalid template (empty, over 100 characters, an unknown token or characters not allowed in file names) disables Export. They carry ID3v2.4 tags (title, artist, album artist, album, year, genre, track number, compilation, the project notes as comment) and optionally the cover. For WAV and MP3 the dialog has a **Maximum cover size (MB)** field (1 MB by default); a larger cover is scaled down proportionally before embedding, while `cover.png` and FLAC keep the original. FLAC carries the same tags as Vorbis comments and the cue sheet.
+* **Write ReplayGain Tags** (on by default, remembered) measures each track's loudness during export and writes ReplayGain 2.0 track and album gain and peak (ID3 `TXXX` for WAV and MP3, Vorbis comments for FLAC, `REM` lines in the cue sheet), so players can play every track equally loud without changing the audio.
+* **Presets**: **Save as preset…** stores the current choices (format, bitrate, sample rate, cover options, original recordings, ReplayGain and the file name template, but not the folder) under a name; choosing a preset from the list fills the dialog, and **Delete preset** removes it. Up to 20 presets; an existing name is replaced only after confirmation.
 * The cover is also written as `cover.png` (converted when needed).
 * The **Export Original Recording** checkbox (off by default, remembered, available for every format) also copies each side's stored recording unchanged as `side-a-recording.wav` and `side-b-recording.wav` (the saved files, so pending unsaved Amplify or Fix Noise results are not included; a side without a file is skipped).
 * After confirming, pick the target folder; existing files are replaced only after confirmation. Export runs as a job that can be cancelled (partial files are removed).
@@ -102,8 +124,8 @@ Built with Go and [Wails v2](https://wails.io) (Svelte + TypeScript UI). Targets
 
 ### Data
 
-* Settings and local data: `~/.tape2digi/` (`settings.json`, `recent-projects.json`; on Windows also `webview/`).
-* A project is a directory with `tape2digi.json` (schema v2), `side-A.wav`, `side-B.wav` and an optional `cover.png`/`cover.jpg`. Renaming a project changes only its name, not its directory. Projects from the earlier schema v1 still open; their old `recordings/` files are kept but not shown, and can be imported into a side. Markers are stored per side (schema stays 2; builds without this feature may drop the field when saving).
+* Settings and local data: `~/.tape2digi/` (`settings.json`, which also holds the export presets, `recent-projects.json`; on Windows also `webview/`).
+* A project is a directory with `tape2digi.json` (schema v2), `side-A.wav`, `side-B.wav` and an optional `cover.png`/`cover.jpg`. Renaming a project changes only its name, not its directory. Projects from the earlier schema v1 still open; their old `recordings/` files are kept but not shown, and can be imported into a side. Markers are stored per side (schema stays 2; builds without this feature may drop the field when saving). The tape details are stored as `notes`, `tapeBrand`, `tapeType` and `noiseReduction`, and a looked-up listing per side as `listing`.
 * Limitation: the File menu is native on macOS; on Windows and Linux it appears in the window menu bar, and the same actions are available as buttons in the project header.
 * Limitation: on macOS and Linux the system WebView keeps its own cache outside `~/.tape2digi` and this cannot be redirected.
 
@@ -158,8 +180,9 @@ Automated tests cover the audio pipeline with a fake device, WAV writing, projec
 | Track table: place markers, the table lists the tracks with `HH:mm:SS` durations and totals; rename a track and move its marker, the title stays; side B continues the numbering; Undo in the editor changes the table; Genre is saved and restored on reopen | required | smoke test |
 | Editor Reset: with markers placed, Reset clears them and the track table; Undo restores markers and titles; disabled with no markers | required | smoke test |
 | Undo from the main window: edit side A, then side B, close the editor; Undo (button, Edit menu, shortcut) reverts B and then A, Redo reapplies A and then B; disabled while recording or a job runs | required | smoke test |
+| Delete a side: confirm, the side disappears and the project is marked changed; Undo (bottom bar, Edit menu, shortcut) restores it with its marks; Discard restores it; after Save the side file is gone and stays gone on reopen; disabled while recording or a job runs | required | smoke test |
 | Compilation: ticking it hides the Album Artist column of the track table and exports every file with album artist `V/A`; the project artist stays the default track artist; ticking and unticking can be undone and redone from the main window (Undo/Redo keep the typed text); unticking brings the column and values back | required | smoke test |
-| Export: toolbar order is New, Open, Save, Save As, Export (Undo, Redo and the unsaved dot are icons at the left of the bottom bar); File > Export (`Cmd/Ctrl+E`) opens the dialog; WAV at each target rate keeps pitch and length; WAV, MP3 (each bitrate) and FLAC + CUE open in a player/tagger with correct tags, cover and track lengths; `cover.png` is written; Export Original Recording adds `side-a-recording.wav`/`side-b-recording.wav` identical to the stored sides for every format; a cover above the size limit is shrunk only inside the tags (cover.png keeps the original); replacing existing files asks first; Cancel leaves no partial files | required | smoke test |
+| Export: toolbar order is New, Open, Save, Save As, Look up tracks…, Export (Undo, Redo and the unsaved dot are icons at the left of the bottom bar); File > Export (`Cmd/Ctrl+E`) opens the dialog; WAV at each target rate keeps pitch and length; WAV, MP3 (each bitrate) and FLAC + CUE open in a player/tagger with correct tags, cover and track lengths; `cover.png` is written; Export Original Recording adds `side-a-recording.wav`/`side-b-recording.wav` identical to the stored sides for every format; a cover above the size limit is shrunk only inside the tags (cover.png keeps the original); replacing existing files asks first; Cancel leaves no partial files | required | smoke test |
 | Recorder layout: project panel first on the left, source panel under it, side A and B panels (with track tables) on the right; both columns scroll independently at the minimum window size | required | smoke test |
 | Track player: the play button on a track row opens a player with only that track's waveform; Play/Pause/Stop work, clicking the waveform moves the playhead, playback stops at the track end and when the player closes, zoom matches the editor | required | smoke test |
 | Side editor Undo/Redo: buttons, Edit menu and shortcuts revert and repeat marker insert/delete/move and Amplify; disabled when nothing to do; text fields keep their own undo | required | smoke test |
@@ -172,6 +195,8 @@ Record results per OS/arch in the pull request or release notes; none of the har
 # tape2digi (Українська)
 
 **Оцифровуйте аудіокасети кількома кліками.**
+
+**[⬇ Завантажити](https://github.com/afrunt/tape2digi/releases)** для macOS, Windows і Linux.
 
 [English (US)](#tape2digi) · Українська
 
@@ -187,24 +212,27 @@ tape2digi — безкоштовний десктопний застосунок
 
 * **Будь-який вхід**: line-in, мікрофон або будь-який пристрій захоплення, з індикаторами рівня лівого/правого каналу в реальному часі (один для моно).
 * **Монітор**: за бажанням слухайте вхідний сигнал на обраному виході, не впливаючи на запис.
-* **Запис по сторонах**: сторона A і сторона B, з паузою, продовженням і зупинкою; 44,1/48/96 кГц, моно або стерео, 16 чи 24 біти. Записи зберігаються у WAV.
+* **Запис по сторонах**: сторона A і сторона B, з паузою, продовженням і зупинкою; 44,1/48/96 кГц, моно або стерео, 16 чи 24 біти. Записи зберігаються у WAV. **Автостоп** завершує запис після тиші в кінці сторони касети (за замовчуванням 1 хвилина).
 * **Імпорт**: перетворення наявного файлу WAV, MP3, FLAC або Ogg Vorbis на сторону.
 * **Проєкти**: одна тека на касету з назвою, виконавцем, альбомом, роком, жанром, обкладинкою та режимом «Compilation» для касет зі збірками.
-* **Редактор сторони**: хвиля із зумом, маркери початку/кінця треків, **Amplify**, **Split** (шукає паузи між піснями), **Fix Noise** (прибирає рівномірний шум і гул) та **Reset**.
-* **Таблиця треків**: редагована назва, виконавець та виконавець альбому для кожного треку, з тривалостями та підсумками.
+* **Пошук треків онлайн** (необов'язковий, вимкнений, доки ви його не ввімкнете): знаходить реліз у MusicBrainz, заповнює назви треків і обкладинку та розбиває сторону за тривалостями зі списку.
+* **Редактор сторони**: хвиля із зумом, маркери початку/кінця треків, **Amplify**, **Split** (шукає паузи між піснями), **Fix Noise** (прибирає рівномірний шум і гул), **Normalize** (цільова гучність у LUFS), **Repair** (зсув DC, гул, баланс каналів, азимут, моно) та **Reset**; вигляд спектрограми, позначки перевантажень і клавіатурні скорочення.
+* **Таблиця треків**: редагована назва, виконавець та виконавець альбому для кожного треку, з тривалостями та підсумками; вставте весь список треків одразу або пронумеруйте треки без назв.
 * **Програвач треку**: прослуховування окремого треку.
 * **Undo / Redo**: до 100 кроків на сторону, а також правки форми проєкту, як-от галочка Compilation.
-* **Експорт**: WAV (оригінальний або з передискретизацією), MP3 (128–320 кбіт/с) чи FLAC з CUE-файлом; теги ID3v2.4, вбудована обкладинка та `cover.png`, а також необов'язкова копія оригінальних записів.
+* **Експорт**: WAV (оригінальний або з передискретизацією), MP3 (128–320 кбіт/с) чи FLAC з CUE-файлом; теги ID3v2.4, вбудована обкладинка та `cover.png`, а також необов'язкова копія оригінальних записів; теги ReplayGain, шаблон імен файлів і пресети експорту.
 
 ## Чому tape2digi
 
 * Створений для касет: сторони A/B, розмітка треків і зменшення шуму в одному місці замість жонглювання магнітофоном і аудіоредактором.
 * Безпечний за задумом: записи йдуть у тимчасовий файл і замінюють аудіо проєкту лише після натискання **Save**; запис, що лишився після збою, можна відновити.
 * Експорт нічого не змінює: проєкт залишається як був.
-* Невеликий, нативний і самодостатній: без облікових записів і хмари, усі дані лишаються на вашому комп'ютері.
+* Невеликий, нативний і самодостатній: без облікових записів, усі дані лишаються на вашому комп'ютері. Єдиний доступ до мережі — необов'язковий пошук треків, який вимкнений, доки ви його не ввімкнете, і надсилає лише текст виконавця й альбому, що ви шукаєте.
 * Однаково працює на macOS, Windows і Linux.
 
 ## Швидкий старт
+
+Завантажте застосунок для своєї платформи зі [сторінки релізів](https://github.com/afrunt/tape2digi/releases).
 
 1. Запустіть tape2digi і оберіть **New project** (тека та назва) або **Open project** / недавній проєкт.
 2. Виберіть пристрій введення й переконайтеся, що індикатори рухаються.
@@ -221,13 +249,22 @@ tape2digi — безкоштовний десктопний застосунок
 * За бажанням додайте обкладинку (PNG/JPEG, до 20 МБ).
 * Назва, обкладинка та ці поля накопичуються під час введення, і кнопка **Save** у заголовку активується одразу. **Save** (`Cmd/Ctrl+S`) записує їх; **Save As…** (`Cmd/Ctrl+Shift+S`) копіює весь проєкт з цими правками в нову теку й відкриває копію. Закриття проєкту чи застосунку з незбереженими змінами спершу запитує підтвердження.
 
+### Пошук треків онлайн
+
+* **Знайти треки…** (кнопка панелі проєкту перед Export і пункт меню **File** перед Export; доступна, щойно сторона має хоча б один повний трек) шукає реліз у [MusicBrainz](https://musicbrainz.org) за Artist і Album проєкту. Онлайн-пошук вимкнений за замовчуванням: перше використання запитує згоду, а вмикати й вимикати його можна будь-коли через **Інструменти → Пошук треків онлайн**. Надсилається лише текст пошуку (виконавець і альбом), а обкладинка завантажується з Cover Art Archive; жодне аудіо чи інші дані не залишають комп'ютер.
+* Діалог показує знайдені релізи (назва, виконавець, рік, країна, формати, кількість треків). Після вибору видно, як його треки розподіляються на сторони A і B (два носії або один, розділений за номерами `A`/`B` чи за тривалістю записаних сторін; для релізів з більшою кількістю носіїв ви обираєте потрібні). **Apply** заповнює назви (та відмінних виконавців) позначених треків по порядку одним кроком скасування на сторону, заповнює лише порожні Artist, Album і Year та за бажанням бере обкладинку релізу (увімкнено, якщо в проєкті немає обкладинки).
+* Список зберігається разом зі стороною.
+
 ### Запис
 
 * Оберіть пристрій введення; індикатор поруч показує рівні лівого/правого каналу (одна смуга для моно). За замовчуванням 44,1 кГц, стерео, 16 біт; частоту (44,1/48/96 кГц), канали та розрядність (16/24) можна змінити перед записом.
 * **Monitor** (вимкнений за замовчуванням, ніколи не запам'ятовується) відтворює вхід на виході, обраному в списку поруч. **System default** обрано заздалегідь, і це поточний вихід системи за замовчуванням на момент запуску монітора; конкретний пристрій запам'ятовується за назвою й, якщо його немає, замінюється на типовий. Зміна виходу під час роботи монітора переносить звук без впливу на запис. Чи слідує запущений монітор за пізнішою зміною системного виходу, залежить від аудіобекенда ОС; якщо ні, перемкніть Monitor або перевиберіть вихід. Уникайте його з мікрофоном біля колонок: можливий фідбек.
 * Натисніть **Record side A** або **Record side B**; ставте на паузу, продовжуйте й зупиняйте за потреби. Якщо сторона вже записана, перед перезаписом запитають підтвердження.
+* **Автозупинка на тиші** (увімкнена за замовчуванням) сам зупиняє запис після заданої тривалості тиші (хв:сс, від 0:10 до 10:00, за замовчуванням 1:00), якщо запис триває щонайменше 30 с, і обрізає тихий хвіст до 2 с. Поріг підлаштовується під власний рівень шуму касети; пауза скидає відлік тиші. Повідомлення на стороні показує, що запис зупинено саме так.
+* Після запису, імпорту чи правки сторона у фоні перевіряється на перевантаження; позначка **Перевантаження: N** на стороні показує, скільки таких місць знайдено.
 * Записане й імпортоване аудіо зберігається у тимчасових файлах прихованої теки `.tape2digi-staging` і позначає проєкт зміненим; лише **Save** переносить його в `side-A.wav` / `side-B.wav`, а скасування його відкидає. Якщо застосунок зупинено під час запису, наступного відкриття проєкту він запропонує відновити (**Recover**) або видалити незбережений запис.
 * **Import…** на стороні перетворює наявний файл (WAV, MP3, FLAC, Ogg Vorbis; Ogg Opus не підтримується) на WAV цієї сторони. Частота зберігається; результат 16-бітний, або 24-бітний для 24-бітних/float-джерел; джерела з понад двома каналами зводяться у стерео. Імпорт можна скасувати.
+* **Delete** на стороні після підтвердження прибирає її запис (разом із розмітками й назвами треків). Як і інші зміни, видалення відкладене: сторона зникає одразу, **Undo** повертає її, **Discard** скасовує видалення, і лише **Save** остаточно видаляє `side-A.wav` / `side-B.wav` з диска. Кнопка вимкнена під час запису або іншої операції.
 * У macOS під час першого запуску запитується дозвіл на мікрофон. Якщо його відхилено, увімкніть у System Settings → Privacy & Security → Microphone.
 
 ### Редагування сторони
@@ -238,14 +275,20 @@ tape2digi — безкоштовний десктопний застосунок
 * **Маркери**: правий клік відкриває меню вставки маркера початку або кінця треку (маркери чергуються: початок, кінець, початок, кінець; початок ставиться лише після останнього кінця або в порожній список, кінець — лише після відкритого початку). Перетягніть маркер, щоб посунути його; він не може обігнати сусідів. Правий клік на маркері та **Delete marker**: видалення початку видаляє й його кінець, кінець можна видалити лише коли він останній, і тоді його початок лишається відкритим. Маркери зберігаються по сторонах у `tape2digi.json` як `markers` і вважаються незбереженими змінами до **Save**.
 * **Amplify** підсилює обидва канали найбільшим підсиленням без кліпінгу (як Amplify в Audacity, у дБ) і вимкнений, якщо сторона вже на максимумі або тиха. Підсилене аудіо — тимчасова копія; **Save** застосовує її, **Discard** повертає оригінал.
 * **Split** аналізує запис на паузи між треками (тиша щонайменше 2 с, значно тихіша за музику) і замінює маркери початком і кінцем кожного треку одним кроком, який скасовує **Undo**; лишається вимкненим, якщо чітких пауз не знайдено.
+* **Нормалізувати…** вимірює інтегральну гучність сторони (EBU R 128 / BS.1770) і доводить її до цілі від -23 до -9 LUFS (за замовчуванням -18) одним підсиленням, обмеженим так, щоб пік не перевищував -1 dBFS; панель показує виміряну гучність, пік і підсилення. Скасовується як Amplify.
+* **Ремонт…** аналізує сторону й пропонує лише те, що знайшов: прибирання **зсуву DC**, режекторний фільтр **гулу** на 50 або 60 Гц і його гармоніках, **баланс** тихішого каналу (можна змінити, ±6 дБ), **азимут** (вирівнює канал, що запізнюється через перекошену головку) та **моно** з лівого, правого каналу або їх суміші. Кожен інструмент застосовується окремо й скасовується.
+* **Спектрограма**: перемикач **Хвиля** / **Спектрограма** показує частоти сторони в часі, тож гул (низькі лінії), шипіння (серпанок угорі) і клацання (вертикальні смуги) добре видно; слідує за масштабом і прокруткою.
+* **Перевантаження**: місця кліпінгу позначені на лінійці, а **Наступне перевантаження** переносить курсор до наступного.
+* **Клавіші**: `S` / `E` додають маркер початку / кінця на курсорі, `[` і `]` переходять до попереднього / наступного маркера, `Пробіл` — відтворення або пауза.
 * **Fix Noise** прибирає рівномірний шум касети (шипіння й гул): вимірює шум у тихих ділянках (паузи між треками та вступ), віднімає цей спектр від усієї сторони й може бути скасований через **Undo**. Лишається вимкненим, якщо не знайдено рівномірного шуму (наприклад, немає тихих ділянок) або шум і так низький, тому після успішного запуску він теж вимкнений. Трохи шипіння під гучною музикою лишається.
 * **Reset** видаляє всі маркери сторони (разом із назвами й виконавцями треків, що на них зберігаються) одним кроком, який скасовує **Undo**; вимкнений, якщо маркерів немає.
-* **Undo / Redo** (кнопки-іконки ліворуч у нижній панелі поруч із індикатором незбережених змін, меню **Edit**, `Cmd/Ctrl+Z`; повтор `Cmd+Shift+Z` у macOS, `Ctrl+Y` в інших ОС) скасовують вставку, видалення й переміщення маркерів, Split, Amplify та Fix Noise, до 100 кроків на сторону до Save чи Discard. Із закритим редактором вони скасовують і повторюють останню зміну редактора будь-якої сторони (ту, що була останньою).
+* **Undo / Redo** (кнопки-іконки ліворуч у нижній панелі поруч із індикатором незбережених змін, меню **Edit**, `Cmd/Ctrl+Z`; повтор `Cmd+Shift+Z` у macOS, `Ctrl+Y` в інших ОС) скасовують вставку, видалення й переміщення маркерів, Split, Amplify, Fix Noise та видалення сторони, до 100 кроків на сторону до Save чи Discard. Із закритим редактором вони скасовують і повторюють останню зміну редактора будь-якої сторони (ту, що була останньою).
 
 ### Таблиця треків і програвач
 
 * Щойно сторона має маркери початку й кінця, під її елементами керування з'являється **таблиця треків**: `#` (нумерація продовжується зі сторони A на B), редаговані `Title`, `Artist` і `Album Artist` (порожні клітинки виконавця показують Artist проєкту, окрім збірок; введення замінює його) та `Duration` лише для читання (`HH:mm:SS`), а нижче — кількість треків і загальна тривалість.
 * Таблиця слідує за кожною зміною маркерів у редакторі; назви зберігаються разом із маркерами (тож Split, що замінює всі маркери, очищає їх, а Undo повертає).
+* **Назвати треки…** під таблицею сторони приймає вставлений список, одна назва на рядок: **Застосувати список** називає треки по порядку (номери на початку, як-от `1.`, `01 -` чи `A1`, прибираються) і повідомляє про зайві рядки; **Пронумерувати без назви** дає лише порожнім назвам вигляд `Трек N`. Кожна дія — один крок скасування.
 * Кнопка відтворення в кінці рядка треку відкриває програвач лише для цього треку: Play/Pause, Stop, клік чи перетягування по хвилі переміщує позначку, масштаб такий самий, як у редакторі.
 
 ### Експорт
@@ -255,7 +298,9 @@ tape2digi — безкоштовний десктопний застосунок
 * **WAV**: один файл на трек, у записаному форматі або з передискретизацією до 44,1, 48, 88,2 чи 96 кГц з тією самою розрядністю.
 * **MP3**: один файл на трек, постійний бітрейт 128/192/256/320 кбіт/с (за замовчуванням 320); недоступний для частот, які кодер не обробляє, як-от 96 кГц.
 * **FLAC + CUE**: один FLAC-образ усього альбому, сторона A, потім B, плюс `.cue`-файл; обидві сторони мають мати однаковий формат.
-* Файли WAV і MP3 називаються `NN - Title.ext` і містять теги ID3v2.4 (назва, виконавець, виконавець альбому, альбом, рік, жанр, номер треку, збірка) та за бажанням обкладинку. Для WAV і MP3 у діалозі є поле **Maximum cover size (MB)** (за замовчуванням 1 МБ); більша обкладинка пропорційно зменшується перед вбудовуванням, а `cover.png` і FLAC зберігають оригінал. FLAC містить ті самі теги як коментарі Vorbis та cue-файл.
+* Файли WAV і MP3 називаються за шаблоном **Імена файлів**, за замовчуванням `{n} - {title}`; токени: `{n}` (двоцифровий номер), `{title}`, `{artist}`, `{album}`, `{year}` і `{side}`, роздільники біля порожнього токена прибираються, а трек без назви — `Track NN`. Діалог показує ім'я першого файлу під час введення; неправильний шаблон (порожній, понад 100 символів, невідомий токен або недопустимі в іменах файлів символи) вимикає Export. Файли містять теги ID3v2.4 (назва, виконавець, виконавець альбому, альбом, рік, жанр, номер треку, збірка, нотатки проєкту як коментар) та за бажанням обкладинку. Для WAV і MP3 у діалозі є поле **Maximum cover size (MB)** (за замовчуванням 1 МБ); більша обкладинка пропорційно зменшується перед вбудовуванням, а `cover.png` і FLAC зберігають оригінал. FLAC містить ті самі теги як коментарі Vorbis та cue-файл.
+* **Записати теги ReplayGain** (увімкнено за замовчуванням, запам'ятовується) під час експорту вимірює гучність кожного треку й записує ReplayGain 2.0 для треку та альбому (підсилення й пік: ID3 `TXXX` для WAV і MP3, коментарі Vorbis для FLAC, рядки `REM` у cue-файлі), тож плеєри відтворюють усі треки однаково гучно без зміни аудіо.
+* **Пресети**: **Зберегти як пресет…** запам'ятовує поточний вибір (формат, бітрейт, частоту, параметри обкладинки, оригінальні записи, ReplayGain і шаблон імен файлів, але не теку) під назвою; вибір пресету зі списку заповнює діалог, а **Видалити пресет** прибирає його. До 20 пресетів; наявна назва замінюється лише після підтвердження.
 * Обкладинка також записується як `cover.png` (за потреби конвертується).
 * Галочка **Export Original Recording** (вимкнена за замовчуванням, запам'ятовується, доступна для всіх форматів) також копіює збережений запис кожної сторони без змін як `side-a-recording.wav` і `side-b-recording.wav` (це збережені файли, тож незбережені результати Amplify чи Fix Noise не входять; сторона без файлу пропускається).
 * Після підтвердження оберіть цільову теку; наявні файли замінюються лише після підтвердження. Експорт виконується як завдання, яке можна скасувати (часткові файли видаляються).
@@ -273,8 +318,8 @@ tape2digi — безкоштовний десктопний застосунок
 
 ### Дані
 
-* Налаштування та локальні дані: `~/.tape2digi/` (`settings.json`, `recent-projects.json`; у Windows також `webview/`).
-* Проєкт — це тека з `tape2digi.json` (схема v2), `side-A.wav`, `side-B.wav` та необов'язковою `cover.png`/`cover.jpg`. Перейменування проєкту змінює лише його назву, а не теку. Проєкти зі старої схеми v1 усе ще відкриваються; їхні старі файли `recordings/` зберігаються, але не показуються, і їх можна імпортувати у сторону. Маркери зберігаються по сторонах (схема лишається 2; збірки без цієї можливості можуть втратити поле під час збереження).
+* Налаштування та локальні дані: `~/.tape2digi/` (`settings.json`, де також зберігаються пресети експорту, `recent-projects.json`; у Windows також `webview/`).
+* Проєкт — це тека з `tape2digi.json` (схема v2), `side-A.wav`, `side-B.wav` та необов'язковою `cover.png`/`cover.jpg`. Перейменування проєкту змінює лише його назву, а не теку. Проєкти зі старої схеми v1 усе ще відкриваються; їхні старі файли `recordings/` зберігаються, але не показуються, і їх можна імпортувати у сторону. Маркери зберігаються по сторонах (схема лишається 2; збірки без цієї можливості можуть втратити поле під час збереження). Дані касети зберігаються як `notes`, `tapeBrand`, `tapeType` і `noiseReduction`, а знайдений онлайн список сторони — як `listing`.
 * Обмеження: меню File нативне в macOS; у Windows і Linux воно з'являється в смузі меню вікна, а ті самі дії доступні кнопками в заголовку проєкту.
 * Обмеження: у macOS і Linux системний WebView тримає власний кеш поза `~/.tape2digi`, і перенаправити його неможливо.
 

@@ -38,6 +38,30 @@ type Span struct{ From, To int }
 // env (dBFS per WindowMs window), or nil when no confident split of at least
 // two tracks exists.
 func Detect(env []float32) []project.Marker {
+	kept := pieces(env)
+	if len(kept) < 2 {
+		return nil
+	}
+
+	total := int64(len(env)) * WindowMs
+	out := make([]project.Marker, 0, 2*len(kept))
+	for _, t := range kept {
+		s := int64(t.From)*WindowMs - padMs
+		e := int64(t.To)*WindowMs + padMs
+		if s < 0 {
+			s = 0
+		}
+		if e > total {
+			e = total
+		}
+		out = append(out, project.Marker{Kind: project.MarkerStart, PositionMs: s}, project.Marker{Kind: project.MarkerEnd, PositionMs: e})
+	}
+	return out
+}
+
+// pieces returns the stretches of music between the pauses, without pieces
+// too short to be a track; nil when pauses cannot be told from music.
+func pieces(env []float32) []Span {
 	n := len(env)
 	gaps, ok := trackGaps(env)
 	if !ok {
@@ -69,44 +93,15 @@ func Detect(env []float32) []project.Marker {
 			kept = append(kept, t)
 		}
 	}
-	if len(kept) < 2 {
-		return nil
-	}
-
-	total := int64(n) * WindowMs
-	out := make([]project.Marker, 0, 2*len(kept))
-	for _, t := range kept {
-		s := int64(t.From)*WindowMs - padMs
-		e := int64(t.To)*WindowMs + padMs
-		if s < 0 {
-			s = 0
-		}
-		if e > total {
-			e = total
-		}
-		out = append(out, project.Marker{Kind: project.MarkerStart, PositionMs: s}, project.Marker{Kind: project.MarkerEnd, PositionMs: e})
-	}
-	return out
+	return kept
 }
 
 // trackGaps finds the pauses between tracks. Short pauses may be a small share
 // of a side, so the floor comes from the quietest windows: tape hiss when there
 // is any, otherwise digital silence (for example in an imported file).
 func trackGaps(env []float32) ([]Span, bool) {
-	if len(env) == 0 {
-		return nil, false
-	}
-	all := append([]float32(nil), env...)
-	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
-	music := float64(all[len(all)/2])
-	audible := sort.Search(len(all), func(i int) bool { return all[i] > digitalSilenceDB })
-	floor := float64(all[len(all)*floorPermille/1000])
-	if rest := all[audible:]; len(rest) > 0 {
-		if f := float64(rest[len(rest)*floorPermille/1000]); music-f >= minSpreadDB {
-			floor = f
-		}
-	}
-	if music-floor < minSpreadDB {
+	floor, music, ok := levels(env)
+	if !ok {
 		return nil, false
 	}
 	at := func(pos float64) float32 { return float32(floor + pos*(music-floor)) }
@@ -119,6 +114,25 @@ func trackGaps(env []float32) ([]Span, bool) {
 		}
 	}
 	return gaps, true
+}
+
+// levels returns the noise floor and the typical music level of env; ok is
+// false when they are too close to tell pauses from music.
+func levels(env []float32) (floor, music float64, ok bool) {
+	if len(env) == 0 {
+		return 0, 0, false
+	}
+	all := append([]float32(nil), env...)
+	sort.Slice(all, func(i, j int) bool { return all[i] < all[j] })
+	music = float64(all[len(all)/2])
+	audible := sort.Search(len(all), func(i int) bool { return all[i] > digitalSilenceDB })
+	floor = float64(all[len(all)*floorPermille/1000])
+	if rest := all[audible:]; len(rest) > 0 {
+		if f := float64(rest[len(rest)*floorPermille/1000]); music-f >= minSpreadDB {
+			floor = f
+		}
+	}
+	return floor, music, music-floor >= minSpreadDB
 }
 
 // fadedDip reports whether the run r below the silence threshold reaches the

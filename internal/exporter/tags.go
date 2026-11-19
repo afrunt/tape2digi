@@ -37,7 +37,7 @@ func CoverPNG(data []byte) ([]byte, error) {
 }
 
 // id3Tag builds an ID3v2.4.0 tag for a track; cover is PNG or nil.
-func id3Tag(in Input, t Track, cover []byte) ([]byte, error) {
+func id3Tag(in Input, t Track, cover []byte, user [][2]string) ([]byte, error) {
 	tag := id3v2.NewEmptyTag()
 	tag.SetVersion(4)
 	tag.SetDefaultEncoding(id3v2.EncodingUTF8)
@@ -55,6 +55,9 @@ func id3Tag(in Input, t Track, cover []byte) ([]byte, error) {
 	text("TRCK", fmt.Sprintf("%d/%d", t.Num, t.Total))
 	if in.Compilation {
 		text("TCMP", "1")
+	}
+	for _, kv := range user {
+		tag.AddUserDefinedTextFrame(id3v2.UserDefinedTextFrame{Encoding: id3v2.EncodingUTF8, Description: kv[0], Value: kv[1]})
 	}
 	if len(cover) > 0 {
 		tag.AddAttachedPicture(id3v2.PictureFrame{
@@ -85,7 +88,7 @@ func cueTime(offset, rate int64) string {
 
 // cueSheet describes the tracks of the album image; each track starts where
 // the previous one ends.
-func cueSheet(in Input, tracks []Track, flacName string) string {
+func cueSheet(in Input, tracks []Track, flacName string, rg *replayGain) string {
 	var b strings.Builder
 	performer := in.Artist
 	if performer == "" {
@@ -97,14 +100,16 @@ func cueSheet(in Input, tracks []Track, flacName string) string {
 	if in.Year != "" {
 		fmt.Fprintf(&b, "REM DATE %s\n", in.Year)
 	}
+	cueReplayGain(&b, "", replayGainTags(gainValue{}, rg.album()))
 	fmt.Fprintf(&b, "PERFORMER %s\nTITLE %s\nFILE %s WAVE\n", cueText(performer), cueText(in.AlbumName()), cueText(flacName))
 	var at int64
 	rate := int64(tracks[0].Side.Format.SampleRate)
-	for _, t := range tracks {
+	for i, t := range tracks {
 		fmt.Fprintf(&b, "  TRACK %02d AUDIO\n    TITLE %s\n", t.Num, cueText(t.TitleOrDefault()))
 		if t.Artist != "" {
 			fmt.Fprintf(&b, "    PERFORMER %s\n", cueText(t.Artist))
 		}
+		cueReplayGain(&b, "    ", replayGainTags(rg.track(i), gainValue{}))
 		fmt.Fprintf(&b, "    INDEX 01 %s\n", cueTime(at, rate))
 		at += t.Frames
 	}

@@ -145,6 +145,9 @@ func (p *Project) effectiveMarkersLocked(key string) []Marker {
 }
 
 func (p *Project) sideLocked(key string) (Side, bool) {
+	if p.deleted[key] {
+		return Side{}, false
+	}
 	if s, ok := p.staged[key]; ok {
 		return s, true
 	}

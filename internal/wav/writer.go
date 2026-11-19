@@ -122,6 +122,27 @@ func (w *Writer) Write(p []byte) (int, error) {
 // DataBytes returns the number of PCM bytes written so far.
 func (w *Writer) DataBytes() uint64 { return w.dataBytes }
 
+// Truncate drops the data after the first n bytes (rounded down to whole
+// frames) and rewrites the header. When the file can be truncated (like
+// *os.File) its size shrinks too. A larger n is ignored.
+func (w *Writer) Truncate(n uint64) error {
+	if w.closed {
+		return errors.New("wav: truncate after close")
+	}
+	n -= n % uint64(w.format.BlockAlign())
+	if n >= w.dataBytes {
+		return nil
+	}
+	w.dataBytes = n
+	w.limitReached = false
+	if t, ok := w.f.(interface{ Truncate(int64) error }); ok {
+		if err := t.Truncate(int64(headerSize + n)); err != nil {
+			return err
+		}
+	}
+	return w.patch()
+}
+
 // Close finalises the header and syncs the file. It does not close the file.
 func (w *Writer) Close() error {
 	if w.closed {

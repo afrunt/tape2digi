@@ -5,6 +5,11 @@
   import {
     AddMarker,
     AmplifySide,
+    CancelJob,
+    NormalizeSide,
+    RepairSide,
+    SideRepairPlan,
+    SideLoudnessInfo,
     EditHistory,
     MarkerOptions,
     MarkerRange,
@@ -22,13 +27,14 @@
     SplitSide,
     SideWaveform,
     SideWaveformRange,
+    SideSpectrogram,
     SidePlaybackState,
     StopSidePlayback,
     UndoSide,
     GetEditorWindow,
     SaveEditorWindow,
   } from '../../wailsjs/go/main/App'
-  import type { main } from '../../wailsjs/go/models'
+  import type { main, repair, spectrum } from '../../wailsjs/go/models'
   import { errText, formatDuration, hooks, ui } from './store.svelte'
 
   const LANE_MIN = 110
@@ -41,9 +47,20 @@
   const MIN_VIEW_MS = 1000
 
   let wave = $state<main.Waveform | null>(null)
+  let viewMode = $state<'wave' | 'spec'>('wave')
+  // The spectrogram of the loaded window as an offscreen picture (columns x rows).
+  let spec = $state<{ img: HTMLCanvasElement; fromMs: number; toMs: number } | null>(null)
+  const SPEC_ROWS = 128
   let loading = $state(false)
   let amplifying = $state(false)
-  let workKind = $state<'amplify' | 'denoise'>('amplify')
+  type WorkKind = 'amplify' | 'denoise' | 'loudness' | 'normalize' | 'repairScan' | 'repair'
+  let workKind = $state<WorkKind>('amplify')
+  let rep = $state<repair.Analysis | null>(null)
+  let repBalance = $state(0)
+  let repMono = $state<'left' | 'right' | 'mix'>('left')
+  let norm = $state<main.SideLoudness | null>(null)
+  let normTarget = $state(-18)
+  let cancelled = false
   let error = $state('')
   let width = $state(0)
   let canvas = $state<HTMLCanvasElement>()
@@ -84,6 +101,7 @@
   const saved = $derived(side ? (ui.project?.sides?.[side]?.markers ?? []) : [])
   const markers = $derived(drag?.moved ? saved.map((m) => (m.positionMs === drag!.from ? { ...m, positionMs: drag!.cur } : m)) : saved)
   const duration = $derived(wave?.durationMs ?? 0)
+  const clips = $derived(side ? (ui.clips[side]?.positions ?? []) : [])
   const lanes = $derived(wave?.channels ?? 0)
   const winMs = $derived(viewMs > 0 && viewMs < duration ? viewMs : duration)
   const winStart = $derived(viewMs > 0 && viewMs < duration ? viewStart : 0)
@@ -102,9 +120,15 @@
       const buckets = Math.max(256, Math.round(width * (window.devicePixelRatio || 1)))
       const from = winStart
       const span = winMs
+      const specP =
+        viewMode === 'spec'
+          ? SideSpectrogram(side, Math.round(from), zoomed ? Math.round(from + span) : 0, Math.min(2000, Math.round(width * (window.devicePixelRatio || 1))), SPEC_ROWS)
+          : null
       const w = span > 0 && zoomed ? await SideWaveformRange(side, Math.round(from), Math.round(from + span), buckets) : await SideWaveform(side, buckets)
+      const sp = specP ? await specP : null
       if (seq !== loadSeq) return
       wave = w
+      spec = sp ? specPicture(sp) : null
       waveStart = zoomed ? from : 0
       waveMs = zoomed ? span : w.durationMs
       if (viewMs > w.durationMs) viewMs = 0
@@ -113,6 +137,60 @@
     } finally {
       if (seq === loadSeq) loading = false
     }
+  }
+
+  // Dark blue through purple, red and orange to pale yellow, like most audio tools.
+  const SPEC_STOPS: [number, number, number, number][] = [
+    [0, 0, 0, 4],
+    [0.25, 40, 11, 84],
+    [0.5, 140, 30, 100],
+    [0.7, 220, 70, 50],
+    [0.85, 250, 150, 30],
+    [1, 252, 250, 170],
+  ]
+  const SPEC_LUT = (() => {
+    const lut = new Uint8ClampedArray(256 * 3)
+    for (let i = 0; i < 256; i++) {
+      const v = i / 255
+      let k = 1
+      while (k < SPEC_STOPS.length - 1 && SPEC_STOPS[k][0] < v) k++
+      const [a, b] = [SPEC_STOPS[k - 1], SPEC_STOPS[k]]
+      const f = (v - a[0]) / (b[0] - a[0])
+      for (let c = 0; c < 3; c++) lut[i * 3 + c] = a[c + 1] + (b[c + 1] - a[c + 1]) * f
+    }
+    return lut
+  })()
+
+  // Levels arrive base64-encoded (Go []byte); row 0 is the lowest frequency.
+  function specPicture(p: spectrum.Picture) {
+    const raw = atob(p.levels as unknown as string)
+    const img = document.createElement('canvas')
+    img.width = p.columns
+    img.height = p.rows
+    const ctx = img.getContext('2d')!
+    const data = ctx.createImageData(p.columns, p.rows)
+    // Stretch -90..0 dBFS over the colour map; tape hiss sits near the bottom.
+    const lo = (30 / 120) * 255
+    for (let c = 0; c < p.columns; c++) {
+      for (let r = 0; r < p.rows; r++) {
+        const v = raw.charCodeAt(c * p.rows + r)
+        const i = Math.max(0, Math.min(255, Math.round(((v - lo) / (255 - lo)) * 255)))
+        const o = ((p.rows - 1 - r) * p.columns + c) * 4
+        data.data[o] = SPEC_LUT[i * 3]
+        data.data[o + 1] = SPEC_LUT[i * 3 + 1]
+        data.data[o + 2] = SPEC_LUT[i * 3 + 2]
+        data.data[o + 3] = 255
+      }
+    }
+    ctx.putImageData(data, 0, 0)
+    return { img, fromMs: p.fromMs, toMs: p.toMs }
+  }
+
+  function setMode(m: 'wave' | 'spec') {
+    if (viewMode === m) return
+    viewMode = m
+    if (m === 'wave') spec = null
+    else void load()
   }
 
   // Zoom and scroll reload the window data after a short pause.
@@ -139,6 +217,19 @@
     const minSpan = Math.min(MIN_VIEW_MS, duration)
     const span = Math.min(duration, Math.max(minSpan, winMs / factor))
     setView(anchorMs - frac * span, span)
+  }
+
+  // Moves the playhead to ms, scrolling a zoomed view so it stays visible.
+  async function goTo(ms: number) {
+    ms = Math.max(0, Math.min(duration, ms))
+    posMs = ms
+    if (zoomed && (ms < winStart || ms > winStart + winMs)) setView(ms - winMs / 2, winMs)
+    if (active) await guard(() => SeekSide(ms))
+  }
+
+  function nextClip() {
+    if (!clips.length) return
+    void goTo(clips.find((c) => c > posMs + 50) ?? clips[0])
   }
 
   function zoomButtons(factor: number) {
@@ -347,7 +438,13 @@
     const xOf = (ms: number) => (winMs > 0 ? ((ms - winStart) / winMs) * width : 0)
     const accent = css('--accent')
 
-    for (let ch = 0; ch < lanes; ch++) {
+    if (viewMode === 'spec' && spec) {
+      g.imageSmoothingEnabled = true
+      const x1 = xOf(spec.fromMs)
+      const x2 = xOf(spec.toMs)
+      g.drawImage(spec.img, x1, RULER_H, x2 - x1, h - RULER_H)
+    }
+    for (let ch = 0; ch < lanes && viewMode === 'wave'; ch++) {
       const top = RULER_H + ch * laneH
       const mid = top + laneH / 2
       g.fillStyle = css('--meter-track')
@@ -393,6 +490,12 @@
     }
 
     drawRuler(g, xOf)
+    g.fillStyle = css('--warning')
+    for (const c of clips) {
+      if (c < winStart || c > winStart + winMs) continue
+      const x = Math.round(xOf(c))
+      g.fillRect(x - 1, RULER_H - 6, 3, 6)
+    }
     const px = Math.round(xOf(posMs)) + 0.5
     g.strokeStyle = css('--text')
     g.lineWidth = 1.5
@@ -405,7 +508,7 @@
 
   $effect(() => {
     // Redraw on any input of the picture, including the theme attribute.
-    void [wave, width, laneH, posMs, markers, lanes, winStart, winMs, fontScale.percent, document.documentElement.dataset.theme]
+    void [wave, spec, viewMode, width, laneH, posMs, markers, clips, lanes, winStart, winMs, fontScale.percent, document.documentElement.dataset.theme]
     draw()
   })
 
@@ -533,6 +636,48 @@
     })
   }
 
+  async function markerAtPlayhead(kind: 'start' | 'end') {
+    if (!side || !wave) return
+    const ms = Math.round(posMs)
+    await guard(async () => {
+      ui.project = await AddMarker(side, kind, ms)
+    })
+  }
+
+  function jumpMarker(next: boolean) {
+    const ps = markers.map((m) => m.positionMs)
+    const to = next ? ps.find((p) => p > posMs + 1) : ps.findLast((p) => p < posMs - 1)
+    if (to !== undefined) void goTo(to)
+  }
+
+  // S/E add a marker at the playhead, [ and ] jump between markers, Space plays.
+  function onShortcut(e: KeyboardEvent): boolean {
+    if (e.metaKey || e.ctrlKey || e.altKey || amplifying || !wave || menu || drag) return false
+    const el = document.activeElement
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement || (el as HTMLElement | null)?.isContentEditable) return false
+    if (e.code === 'Space') {
+      if (el instanceof HTMLButtonElement) return false
+      void togglePlay()
+      return true
+    }
+    if (e.repeat && (e.key === 's' || e.key === 'e' || e.key === 'S' || e.key === 'E')) return true
+    switch (e.code) {
+      case 'KeyS':
+        void markerAtPlayhead('start')
+        return true
+      case 'KeyE':
+        void markerAtPlayhead('end')
+        return true
+      case 'BracketLeft':
+        jumpMarker(false)
+        return true
+      case 'BracketRight':
+        jumpMarker(true)
+        return true
+    }
+    return false
+  }
+
   async function removeMarker() {
     const m = menu
     menu = null
@@ -579,16 +724,75 @@
     await runJob('amplify', () => AmplifySide(side!))
   }
 
-  async function runJob(kind: 'amplify' | 'denoise', fn: () => Promise<typeof ui.project>) {
+  async function scanRepair() {
+    if (!side || busy()) return
+    norm = null
+    workKind = 'repairScan'
+    amplifying = true
+    cancelled = false
+    error = ''
+    ui.job = null
+    try {
+      rep = await SideRepairPlan(side)
+      repBalance = Math.round(rep.balanceDb * 10) / 10
+    } catch (e) {
+      if (!cancelled) error = errText(e)
+    } finally {
+      amplifying = false
+      ui.job = null
+    }
+  }
+
+  async function applyRepair(tool: string) {
+    if (!side) return
+    const mode = repMono
+    const balance = repBalance
+    rep = null
+    await runJob('repair', () => RepairSide(side!, tool, mode, balance))
+  }
+
+  const pctText = (v: number) => (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%'
+  const repBalanceOk = $derived(typeof repBalance === 'number' && Math.abs(repBalance) >= 0.05 && Math.abs(repBalance) <= 6)
+
+  // measure opens the Normalize panel; the first call measures the side and
+  // later target changes reuse the cached result.
+  async function measure(target: number) {
+    if (!side || busy()) return
+    rep = null
+    workKind = 'loudness'
+    amplifying = true
+    cancelled = false
+    error = ''
+    ui.job = null
+    try {
+      norm = await SideLoudnessInfo(side, target)
+      normTarget = norm.target
+    } catch (e) {
+      if (!cancelled) error = errText(e)
+    } finally {
+      amplifying = false
+      ui.job = null
+    }
+  }
+
+  async function normalize() {
+    if (!side || !norm?.applicable) return
+    const target = normTarget
+    norm = null
+    await runJob('normalize', () => NormalizeSide(side!, target))
+  }
+
+  async function runJob(kind: WorkKind, fn: () => Promise<typeof ui.project>) {
     workKind = kind
     amplifying = true
+    cancelled = false
     error = ''
     ui.job = null
     try {
       ui.project = await fn()
       await load()
     } catch (e) {
-      error = errText(e)
+      if (!cancelled) error = errText(e)
     } finally {
       amplifying = false
       ui.job = null
@@ -603,6 +807,17 @@
 
   const splitHint = $derived(splitTracks === null ? t('edit.splitBusy') : splitTracks > 0 ? t('edit.splitHint', { n: splitTracks }) : t('edit.splitNone'))
   const noiseHint = $derived(noiseDb === null ? t('edit.fixNoiseBusy') : noiseDb === undefined ? t('edit.fixNoiseNone') : t('edit.fixNoiseHint', { db: noiseDb.toFixed(0) }))
+  const normTargets = $derived(norm ? Array.from({ length: norm.maxTarget - norm.minTarget + 1 }, (_, i) => norm!.maxTarget - i) : [])
+  const workText = $derived(
+    {
+      denoise: t('edit.fixNoising'),
+      amplify: t('edit.amplifying'),
+      loudness: t('edit.measuring'),
+      normalize: t('edit.normalizing'),
+      repairScan: t('repair.scanning'),
+      repair: t('repair.applying'),
+    }[workKind],
+  )
   const gainText = $derived(wave?.gainAvailable ? t('edit.amplifyHint', { db: wave.gainDb.toFixed(1) }) : t('edit.amplifyMax'))
   function clampGeo(g: { x: number; y: number; w: number; h: number }) {
     const w = Math.min(Math.max(g.w, Math.min(WIN_MIN_W, window.innerWidth)), window.innerWidth)
@@ -668,11 +883,17 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (!ui.edit || e.key !== 'Escape' || ui.ask) return
+    if (!ui.edit || ui.ask) return
+    if (e.key !== 'Escape') {
+      if (onShortcut(e)) e.preventDefault()
+      return
+    }
     if (drag) {
       suppressClick = drag.moved
       drag = null
     } else if (menu) menu = null
+    else if (norm) norm = null
+    else if (rep) rep = null
     else void close()
   }}
   onclick={() => (menu = null)}
@@ -751,23 +972,114 @@
         <span class="timer">{zoomText}</span>
         <button onclick={() => zoomButtons(2)} disabled={!wave || winMs <= Math.min(MIN_VIEW_MS, duration)} title={t('edit.zoomIn')}>+</button>
         <button onclick={() => setView(0, duration)} disabled={!wave || !zoomed}>{t('edit.zoomFit')}</button>
+        <span class="seg" role="group" aria-label={t('edit.view')}>
+          <button aria-pressed={viewMode === 'wave'} onclick={() => setMode('wave')} disabled={!wave}>{t('edit.viewWave')}</button>
+          <button aria-pressed={viewMode === 'spec'} onclick={() => setMode('spec')} disabled={!wave} title={t('edit.viewSpecHint')}>{t('edit.viewSpec')}</button>
+        </span>
         <span class="grow"></span>
         <button onclick={() => stepHistory(true)} disabled={!canUndo || amplifying} title={t('edit.undo')}>↶ {t('edit.undo')}</button>
         <button onclick={() => stepHistory(false)} disabled={!canRedo || amplifying} title={t('edit.redo')}>↷ {t('edit.redo')}</button>
+      </div>
+
+      <div class="row">
         <button onclick={split} disabled={!splitTracks || amplifying} title={splitHint}>{t('edit.split')}</button>
         <button onclick={resetMarkers} disabled={!saved.length || amplifying} title={t('edit.resetHint')}>{t('edit.reset')}</button>
         <button onclick={fixNoise} disabled={noiseDb == null || amplifying} title={noiseHint}>{t('edit.fixNoise')}</button>
         <button onclick={amplify} disabled={!wave?.gainAvailable || amplifying} title={gainText}>
           {t('edit.amplify')}{wave?.gainAvailable ? ` (+${wave.gainDb.toFixed(1)} ${t('unit.db')})` : ''}
         </button>
+        <button onclick={() => measure(normTarget)} disabled={!wave || amplifying} title={t('edit.normalizeHint')}>{t('edit.normalize')}</button>
+        <button onclick={scanRepair} disabled={!wave || amplifying} title={t('repair.hint')}>{t('repair.open')}</button>
+        {#if clips.length}
+          <button class="clip-btn" onclick={nextClip} disabled={!wave} title={t('edit.nextClipHint', { n: ui.clips[side!]?.count ?? 0 })}>{t('edit.nextClip')}</button>
+        {/if}
       </div>
 
+      {#if norm}
+        <div class="norm island" role="group" aria-label={t('edit.normalize')}>
+          <label for="ed-norm">{t('edit.normalizeTarget')}</label>
+          <select id="ed-norm" bind:value={normTarget} onchange={() => measure(normTarget)} disabled={amplifying}>
+            {#each normTargets as v (v)}<option value={v}>{t('edit.lufs', { n: v })}</option>{/each}
+          </select>
+          {#if norm.available}
+            <span class="small">
+              {t('edit.normalizeInfo', { lufs: norm.lufs.toFixed(1), peak: norm.peakDb.toFixed(1), gain: (norm.gainDb > 0 ? '+' : '') + norm.gainDb.toFixed(1) })}
+            </span>
+            {#if norm.capped}<span class="muted small">{t('edit.normalizeCapped')}</span>{/if}
+            {#if !norm.applicable}<span class="muted small">{t('edit.normalizeNone')}</span>{/if}
+          {:else}
+            <span class="muted small">{t('edit.normalizeSilent')}</span>
+          {/if}
+          <span class="grow"></span>
+          <button class="primary" onclick={normalize} disabled={!norm.applicable || amplifying}>{t('edit.normalizeApply')}</button>
+          <button onclick={() => (norm = null)} disabled={amplifying}>{t('cancel')}</button>
+        </div>
+      {/if}
+
+      {#if rep}
+        <div class="norm island repair" role="group" aria-label={t('repair.title')}>
+          <span class="tool">{t('repair.dc')}</span>
+          <span class="small">
+            {rep.dcFix ? t('repair.dcFound', { values: (rep.dc ?? []).map(pctText).join(', ') }) : t('repair.dcNone')}
+          </span>
+          <button onclick={() => applyRepair('dc')} disabled={!rep.dcFix || amplifying}>{t('repair.apply')}</button>
+
+          <span class="tool">{t('repair.hum')}</span>
+          <span class="small">{rep.humHz ? t('repair.humFound', { hz: rep.humHz, db: rep.humDb.toFixed(0) }) : t('repair.humNone')}</span>
+          <button onclick={() => applyRepair('hum')} disabled={!rep.humHz || amplifying}>{t('repair.apply')}</button>
+
+          {#if rep.channels === 2}
+            <span class="tool">{t('repair.balance')}</span>
+            <span class="small">
+              {rep.balanceFix
+                ? t(rep.balanceDb > 0 ? 'repair.balanceRight' : 'repair.balanceLeft', { db: Math.abs(rep.balanceDb).toFixed(1) })
+                : t('repair.balanceNone')}
+              <label class="inline">
+                {t('repair.balanceValue')}
+                <input type="number" min="-6" max="6" step="0.1" bind:value={repBalance} disabled={amplifying} />
+                {t('unit.db')}
+              </label>
+            </span>
+            <button onclick={() => applyRepair('balance')} disabled={!repBalanceOk || amplifying}>{t('repair.apply')}</button>
+
+            <span class="tool">{t('repair.azimuth')}</span>
+            <span class="small">
+              {rep.delayFix
+                ? t(rep.delay > 0 ? 'repair.delayRight' : 'repair.delayLeft', { n: Math.abs(rep.delay) })
+                : t('repair.delayNone')}
+            </span>
+            <button onclick={() => applyRepair('azimuth')} disabled={!rep.delayFix || amplifying}>{t('repair.apply')}</button>
+
+            <span class="tool">{t('repair.mono')}</span>
+            <span class="small">
+              <select bind:value={repMono} disabled={amplifying} aria-label={t('repair.mono')}>
+                <option value="left">{t('repair.monoLeft')}</option>
+                <option value="right">{t('repair.monoRight')}</option>
+                <option value="mix">{t('repair.monoMix')}</option>
+              </select>
+            </span>
+            <button onclick={() => applyRepair('mono')} disabled={amplifying}>{t('repair.apply')}</button>
+          {:else}
+            <span class="muted small wide">{t('repair.stereoOnly')}</span>
+          {/if}
+          <span class="wide end"><button onclick={() => (rep = null)} disabled={amplifying}>{t('close')}</button></span>
+        </div>
+      {/if}
+
       {#if amplifying}
-        <progress max="100" value={pct ?? undefined}></progress>
-        <p class="muted small">{workKind === 'denoise' ? t('edit.fixNoising') : t('edit.amplifying')}{pct !== null ? ` ${pct}%` : ''}</p>
+        <div class="row">
+          <progress max="100" value={pct ?? undefined}></progress>
+          <button
+            onclick={() => {
+              cancelled = true
+              void CancelJob()
+            }}>{t('cancel')}</button
+          >
+        </div>
+        <p class="muted small">{workText}{pct !== null ? ` ${pct}%` : ''}</p>
       {/if}
       {#if error}<p class="error small" role="alert">{error}</p>{/if}
-      <p class="muted small">{t('edit.hint')} {t('edit.zoomHint')}</p>
+      <p class="muted small">{t('edit.hint')} {t('edit.zoomHint')} {t('edit.keysHint')}</p>
 
       <div class="row actions">
         <button onclick={close} disabled={amplifying}>{t('close')}</button>
@@ -804,6 +1116,35 @@
     flex-direction: column;
     gap: 10px;
     border: 1px solid var(--control-border);
+  }
+  .norm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 12px;
+  }
+  .repair {
+    display: grid;
+    grid-template-columns: max-content 1fr max-content;
+  }
+  .repair .tool {
+    font-weight: 600;
+  }
+  .repair .wide {
+    grid-column: 1 / -1;
+  }
+  .repair .end {
+    justify-self: end;
+  }
+  .repair .inline {
+    margin-left: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .repair input[type='number'] {
+    width: 5em;
   }
   .editor.placed {
     position: absolute;
@@ -862,6 +1203,29 @@
     position: relative;
     line-height: 0;
   }
+  .seg {
+    display: inline-flex;
+  }
+  .seg button {
+    border-radius: 0;
+  }
+  .seg button:first-child {
+    border-radius: var(--radius-control) 0 0 var(--radius-control);
+  }
+  .seg button:last-child {
+    border-radius: 0 var(--radius-control) var(--radius-control) 0;
+    margin-left: -1px;
+  }
+  .seg button[aria-pressed='true'] {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .clip-btn {
+    color: var(--warning);
+  }
+
   canvas {
     display: block;
     cursor: pointer;

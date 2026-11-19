@@ -1,7 +1,7 @@
 <script lang="ts">
   import { t } from './i18n.svelte'
-  import { CancelJob, ChooseFolder, ExportConflicts, ExportPlan, ExportPrefs, ExportTracks, RevealFolder } from '../../wailsjs/go/main/App'
-  import { exporter as exp } from '../../wailsjs/go/models'
+  import { CancelJob, ChooseFolder, DeleteExportPreset, ExportConflicts, ExportNameExample, ExportPlan, ExportPresets, ExportPrefs, ExportTracks, RevealFolder, SaveExportPreset } from '../../wailsjs/go/main/App'
+  import { exporter as exp, settings } from '../../wailsjs/go/models'
   import { ask, errText, formatDuration, ui } from './store.svelte'
 
   const FORMATS = ['wav', 'mp3', 'flac-cue'] as const
@@ -14,6 +14,15 @@
   let coverMax = $state(1)
   let embed = $state(true)
   let original = $state(false)
+  let replayGain = $state(true)
+  const DEFAULT_TEMPLATE = '{n} - {title}'
+  let nameTemplate = $state(DEFAULT_TEMPLATE)
+  let nameExample = $state('')
+  let templateError = $state('')
+  let presets = $state<settings.ExportPreset[]>([])
+  let preset = $state('')
+  // Name typed for "Save as preset…"; null while the field is closed.
+  let presetName = $state<string | null>(null)
   let busy = $state(false)
   let error = $state('')
   let result = $state<{ n: number; dir: string } | null>(null)
@@ -23,19 +32,96 @@
     plan = null
     error = ''
     result = null
-    Promise.all([ExportPlan(), ExportPrefs()])
-      .then(([p, prefs]) => {
+    preset = ''
+    presetName = null
+    Promise.all([ExportPlan(), ExportPrefs(), ExportPresets()])
+      .then(([p, prefs, list]) => {
         plan = p
-        format = prefs.format
-        bitrate = prefs.bitrate
-        rate = prefs.wavRate
-        coverMax = prefs.coverMaxMB
-        embed = prefs.embedCover
-        original = !!prefs.exportOriginal
-        const pick = p.formats.find((f) => f.id === format)
-        if (!pick?.available) format = p.formats.find((f) => f.available)?.id ?? format
+        presets = list ?? []
+        applyPrefs(prefs)
       })
       .catch((e) => (error = errText(e)))
+  })
+
+  function applyPrefs(prefs: settings.ExportPrefs) {
+    format = prefs.format
+    bitrate = prefs.bitrate
+    rate = prefs.wavRate
+    coverMax = prefs.coverMaxMB
+    embed = prefs.embedCover
+    original = !!prefs.exportOriginal
+    replayGain = prefs.replayGain ?? true
+    nameTemplate = prefs.nameTemplate || DEFAULT_TEMPLATE
+    const pick = plan?.formats.find((f) => f.id === format)
+    if (plan && !pick?.available) format = plan.formats.find((f) => f.available)?.id ?? format
+  }
+
+  function pickPreset() {
+    const p = presets.find((x) => x.name === preset)
+    if (p) applyPrefs(p.prefs)
+  }
+
+  function options(dir: string) {
+    return new exp.Options({ format, bitrate, sampleRate: format === 'wav' ? rate : 0, coverMaxMB: coverMax, embedCover: embed, exportOriginal: original, replayGain, nameTemplate, dir })
+  }
+
+  async function savePreset(replace = false) {
+    const name = (presetName ?? '').trim()
+    if (!name) return
+    error = ''
+    try {
+      // A preset keeps both rates so switching its format later still has them.
+      presets = await SaveExportPreset(name, new exp.Options({ ...options(''), sampleRate: rate }), replace)
+      preset = presets.find((p) => p.name.toLowerCase() === name.toLowerCase())?.name ?? ''
+      presetName = null
+    } catch (e) {
+      const m = errText(e)
+      if (m.startsWith('preset_exists:')) {
+        const a = await ask({
+          title: t('export.presetReplaceTitle'),
+          message: t('export.presetReplaceText', { name: m.slice('preset_exists:'.length) }),
+          buttons: [
+            { id: 'cancel', label: t('cancel') },
+            { id: 'yes', label: t('export.presetReplaceYes'), kind: 'danger' },
+          ],
+          cancel: 'cancel',
+        })
+        if (a === 'yes') await savePreset(true)
+      } else error = m
+    }
+  }
+
+  async function deletePreset() {
+    if (!preset) return
+    try {
+      presets = await DeleteExportPreset(preset)
+      preset = ''
+    } catch (e) {
+      error = errText(e)
+    }
+  }
+
+  // Live example of the first file name; the call also validates the template.
+  let exampleSeq = 0
+  $effect(() => {
+    const tmpl = nameTemplate
+    const f = format
+    if (!ui.exportOpen || !plan || f === 'flac-cue') return
+    const seq = ++exampleSeq
+    const timer = setTimeout(() => {
+      ExportNameExample(f, tmpl)
+        .then((n) => {
+          if (seq !== exampleSeq) return
+          nameExample = n
+          templateError = ''
+        })
+        .catch((e) => {
+          if (seq !== exampleSeq) return
+          nameExample = ''
+          templateError = errText(e)
+        })
+    }, 150)
+    return () => clearTimeout(timer)
   })
 
   const info = $derived(plan?.formats.find((f) => f.id === format))
@@ -50,7 +136,8 @@
   const pct = $derived(ui.job?.kind === 'export' && ui.job.total > 0 ? Math.min(100, Math.round((ui.job.done / ui.job.total) * 100)) : null)
   const coverField = $derived(format !== 'flac-cue' && embed && !!plan?.hasCover)
   const coverMaxOk = $derived(typeof coverMax === 'number' && coverMax >= 0.1 && coverMax <= 50)
-  const canExport = $derived(!!plan && plan.tracks > 0 && !!info?.available && !busy && (!coverField || coverMaxOk))
+  const templateOk = $derived(format === 'flac-cue' || (!templateError && nameTemplate.trim() !== ''))
+  const canExport = $derived(!!plan && plan.tracks > 0 && !!info?.available && !busy && (!coverField || coverMaxOk) && templateOk)
 
   function close() {
     if (!busy) ui.exportOpen = false
@@ -63,7 +150,7 @@
     if (!dir) return
     busy = true
     try {
-      const clash = await ExportConflicts(format, dir, original)
+      const clash = await ExportConflicts(format, dir, original, format === 'flac-cue' ? '' : nameTemplate)
       if (clash.length > 0) {
         const shown = clash.slice(0, 10).join('\n') + (clash.length > 10 ? '\n…' : '')
         const a = await ask({
@@ -77,7 +164,7 @@
         })
         if (a !== 'yes') return
       }
-      const r = await ExportTracks(new exp.Options({ format, bitrate, sampleRate: format === 'wav' ? rate : 0, coverMaxMB: coverMax, embedCover: embed, exportOriginal: original, dir }))
+      const r = await ExportTracks(options(dir))
       result = { n: r.files.length, dir: r.dir }
     } catch (e) {
       const m = errText(e)
@@ -89,13 +176,47 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => ui.exportOpen && !ui.ask && e.key === 'Escape' && close()} />
+<svelte:window
+  onkeydown={(e) => {
+    if (!ui.exportOpen || ui.ask || e.key !== 'Escape') return
+    if (presetName !== null) presetName = null
+    else close()
+  }}
+/>
 
 {#if ui.exportOpen}
   <div class="backdrop" role="presentation">
     <div class="island dialog" role="dialog" aria-modal="true" aria-labelledby="ex-title">
       <h2 id="ex-title">{t('export.title')}</h2>
       {#if plan}
+        <div class="row">
+          <label for="ex-preset">{t('export.preset')}</label>
+          <select id="ex-preset" bind:value={preset} onchange={pickPreset} disabled={busy}>
+            <option value="">{presets.length ? t('export.presetNone') : t('export.presetEmpty')}</option>
+            {#each presets as p (p.name)}<option value={p.name}>{p.name}</option>{/each}
+          </select>
+          <span class="grow"></span>
+          {#if presetName === null}
+            <button onclick={() => (presetName = preset)} disabled={busy || !templateOk}>{t('export.presetSave')}</button>
+            <button onclick={deletePreset} disabled={busy || !preset}>{t('export.presetDelete')}</button>
+          {/if}
+        </div>
+        {#if presetName !== null}
+          <div class="row">
+            <!-- svelte-ignore a11y_autofocus -->
+            <input
+              type="text"
+              maxlength="50"
+              bind:value={presetName}
+              placeholder={t('export.presetNamePlaceholder')}
+              aria-label={t('export.presetNamePlaceholder')}
+              autofocus
+              onkeydown={(e) => e.key === 'Enter' && savePreset()}
+            />
+            <button class="primary" onclick={() => savePreset()} disabled={!presetName.trim()}>{t('export.presetSaveGo')}</button>
+            <button onclick={() => (presetName = null)}>{t('cancel')}</button>
+          </div>
+        {/if}
         {#if plan.tracks === 0}
           <p class="muted">{t('export.noTracks')}</p>
         {:else}
@@ -128,9 +249,24 @@
             </select>
           </div>
         {/if}
+        {#if format !== 'flac-cue'}
+          <div class="row">
+            <label for="ex-tmpl">{t('export.template')}</label>
+            <input id="ex-tmpl" type="text" maxlength="100" bind:value={nameTemplate} disabled={busy} aria-invalid={!templateOk} title={t('export.templateHint')} />
+          </div>
+          {#if templateError}
+            <p class="error small" role="alert">{templateError}</p>
+          {:else}
+            <p class="muted small">{t('export.templateTokens')}{nameExample ? ' ' + t('export.templateExample', { name: nameExample }) : ''}</p>
+          {/if}
+        {/if}
         <label class="opt">
           <input type="checkbox" bind:checked={embed} disabled={busy || !plan.hasCover} />
           {t('export.embed')}
+        </label>
+        <label class="opt" title={t('export.replayGainHint')}>
+          <input type="checkbox" bind:checked={replayGain} disabled={busy} />
+          {t('export.replayGain')}
         </label>
         <label class="opt">
           <input type="checkbox" bind:checked={original} disabled={busy} />
@@ -176,6 +312,9 @@
 {/if}
 
 <style>
+  .grow {
+    flex: 1;
+  }
   .backdrop {
     position: fixed;
     inset: 0;

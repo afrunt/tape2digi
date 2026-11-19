@@ -97,6 +97,46 @@ type Peaks struct {
 	Buckets int
 	Min     [][]float32
 	Max     [][]float32
+	// Clips are the first frames of clipped places (at most MaxClips);
+	// ClipCount counts them all.
+	Clips     []int64
+	ClipCount int
+}
+
+// Clip detection: a run of ClipRun samples within 1 LSB of full scale in any
+// channel is a clipped place; places closer than one second merge.
+const (
+	ClipRun  = 3
+	MaxClips = 1000
+)
+
+type clipScan struct {
+	hi, lo int64
+	rate   int64
+	run    []int64 // consecutive full-scale samples per channel
+	have   bool
+	last   int64 // last clipped frame of the current place
+	p      *Peaks
+}
+
+func (c *clipScan) sample(frame int64, ch int, v int64) {
+	if v < c.hi && v > c.lo {
+		c.run[ch] = 0
+		return
+	}
+	c.run[ch]++
+	if c.run[ch] < ClipRun {
+		return
+	}
+	if c.have && frame-c.last < c.rate {
+		c.last = frame
+		return
+	}
+	c.have, c.last = true, frame
+	c.p.ClipCount++
+	if len(c.p.Clips) < MaxClips {
+		c.p.Clips = append(c.p.Clips, frame-int64(ClipRun-1))
+	}
 }
 
 // Analyze reads the whole file once and builds its peak table.
@@ -132,6 +172,8 @@ func Analyze(ctx context.Context, path string) (*Peaks, error) {
 	}
 	bps := format.BitDepth / 8
 	scale := float32(int64(1) << (format.BitDepth - 1))
+	full := int64(1)<<(format.BitDepth-1) - 1
+	clips := clipScan{hi: full - 1, lo: -full, rate: int64(format.SampleRate), run: make([]int64, format.Channels), p: p}
 	buf := make([]byte, copyBlock-copyBlock%int(frame))
 	var done int64
 	for done < frames {
@@ -150,6 +192,7 @@ func Analyze(ctx context.Context, path string) (*Peaks, error) {
 			b := int((done + i) * int64(buckets) / frames)
 			for c := 0; c < format.Channels; c++ {
 				v := sampleAt(chunk[int(i)*int(frame)+c*bps:], bps)
+				clips.sample(done+i, c, v)
 				x := float32(v) / scale
 				first := done+i == 0 || b != int((done+i-1)*int64(buckets)/frames)
 				if first || x < p.Min[c][b] {
@@ -314,6 +357,12 @@ func max64(a, b int64) int64 {
 	return b
 }
 
+// SampleAt reads one little-endian 16- or 24-bit sample.
+func SampleAt(b []byte, bps int) int64 { return sampleAt(b, bps) }
+
+// PutSample writes one little-endian 16- or 24-bit sample.
+func PutSample(b []byte, bps int, v int64) { putSample(b, bps, v) }
+
 func sampleAt(b []byte, bps int) int64 {
 	if bps == 2 {
 		return int64(int16(binary.LittleEndian.Uint16(b)))
@@ -331,6 +380,12 @@ func putSample(b []byte, bps int, v int64) {
 
 // Gain is a rational amplification factor Num/Den.
 type Gain struct{ Num, Den int64 }
+
+// GainFromDB returns the rational gain closest to db decibels.
+func GainFromDB(db float64) Gain {
+	const den = 1 << 20
+	return Gain{int64(math.Round(math.Pow(10, db/20) * den)), den}
+}
 
 // DB returns the gain in decibels.
 func (g Gain) DB() float64 { return 20 * math.Log10(float64(g.Num)/float64(g.Den)) }

@@ -67,6 +67,8 @@ export namespace exporter {
 	    coverMaxMB: number;
 	    dir: string;
 	    exportOriginal: boolean;
+	    replayGain: boolean;
+	    nameTemplate: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Options(source);
@@ -81,6 +83,8 @@ export namespace exporter {
 	        this.coverMaxMB = source["coverMaxMB"];
 	        this.dir = source["dir"];
 	        this.exportOriginal = source["exportOriginal"];
+	        this.replayGain = source["replayGain"];
+	        this.nameTemplate = source["nameTemplate"];
 	    }
 	}
 	export class Plan {
@@ -124,8 +128,188 @@ export namespace exporter {
 
 }
 
+export namespace lookup {
+	
+	export class Track {
+	    position: number;
+	    number: string;
+	    title: string;
+	    artist: string;
+	    lengthMs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Track(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.position = source["position"];
+	        this.number = source["number"];
+	        this.title = source["title"];
+	        this.artist = source["artist"];
+	        this.lengthMs = source["lengthMs"];
+	    }
+	}
+	export class Medium {
+	    position: number;
+	    format: string;
+	    title: string;
+	    tracks: Track[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Medium(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.position = source["position"];
+	        this.format = source["format"];
+	        this.title = source["title"];
+	        this.tracks = this.convertValues(source["tracks"], Track);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Detail {
+	    mbid: string;
+	    title: string;
+	    artist: string;
+	    date: string;
+	    country: string;
+	    formats: string[];
+	    trackCount: number;
+	    media: Medium[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Detail(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mbid = source["mbid"];
+	        this.title = source["title"];
+	        this.artist = source["artist"];
+	        this.date = source["date"];
+	        this.country = source["country"];
+	        this.formats = source["formats"];
+	        this.trackCount = source["trackCount"];
+	        this.media = this.convertValues(source["media"], Medium);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Mapping {
+	    a: Track[];
+	    b: Track[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Mapping(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.a = this.convertValues(source["a"], Track);
+	        this.b = this.convertValues(source["b"], Track);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class Release {
+	    mbid: string;
+	    title: string;
+	    artist: string;
+	    date: string;
+	    country: string;
+	    formats: string[];
+	    trackCount: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Release(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mbid = source["mbid"];
+	        this.title = source["title"];
+	        this.artist = source["artist"];
+	        this.date = source["date"];
+	        this.country = source["country"];
+	        this.formats = source["formats"];
+	        this.trackCount = source["trackCount"];
+	    }
+	}
+
+}
+
 export namespace main {
 	
+	export class ClipSummary {
+	    side: string;
+	    known: boolean;
+	    count: number;
+	    positions: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ClipSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.side = source["side"];
+	        this.known = source["known"];
+	        this.count = source["count"];
+	        this.positions = source["positions"];
+	    }
+	}
 	export class ExportResult {
 	    dir: string;
 	    files: string[];
@@ -139,6 +323,76 @@ export namespace main {
 	        this.dir = source["dir"];
 	        this.files = source["files"];
 	    }
+	}
+	export class LookupPreview {
+	    release: lookup.Detail;
+	    media: number[];
+	    mapping: lookup.Mapping;
+	    recorded: Record<string, number>;
+	
+	    static createFrom(source: any = {}) {
+	        return new LookupPreview(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.release = this.convertValues(source["release"], lookup.Detail);
+	        this.media = source["media"];
+	        this.mapping = this.convertValues(source["mapping"], lookup.Mapping);
+	        this.recorded = source["recorded"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class LookupResult {
+	    info: project.Info;
+	    unmatched: Record<string, number>;
+	    coverError: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LookupResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.info = this.convertValues(source["info"], project.Info);
+	        this.unmatched = source["unmatched"];
+	        this.coverError = source["coverError"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class MarkerChoice {
 	    start: boolean;
@@ -168,6 +422,40 @@ export namespace main {
 	        this.max = source["max"];
 	    }
 	}
+	export class NamedTracks {
+	    project: project.Info;
+	    used: number;
+	    extra: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new NamedTracks(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.project = this.convertValues(source["project"], project.Info);
+	        this.used = source["used"];
+	        this.extra = source["extra"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class NoisePlan {
 	    available: boolean;
 	    noiseDb: number;
@@ -194,6 +482,34 @@ export namespace main {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.available = source["available"];
 	        this.db = source["db"];
+	    }
+	}
+	export class SideLoudness {
+	    available: boolean;
+	    lufs: number;
+	    peakDb: number;
+	    target: number;
+	    gainDb: number;
+	    capped: boolean;
+	    applicable: boolean;
+	    minTarget: number;
+	    maxTarget: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SideLoudness(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.lufs = source["lufs"];
+	        this.peakDb = source["peakDb"];
+	        this.target = source["target"];
+	        this.gainDb = source["gainDb"];
+	        this.capped = source["capped"];
+	        this.applicable = source["applicable"];
+	        this.minTarget = source["minTarget"];
+	        this.maxTarget = source["maxTarget"];
 	    }
 	}
 	export class SidePlayback {
@@ -309,6 +625,22 @@ export namespace project {
 	        this.durationMs = source["durationMs"];
 	    }
 	}
+	export class ListingTrack {
+	    title: string;
+	    artist?: string;
+	    lengthMs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ListingTrack(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.title = source["title"];
+	        this.artist = source["artist"];
+	        this.lengthMs = source["lengthMs"];
+	    }
+	}
 	export class Marker {
 	    kind: string;
 	    positionMs: number;
@@ -343,6 +675,7 @@ export namespace project {
 	    missing?: boolean;
 	    staged?: boolean;
 	    markers?: Marker[];
+	    listing?: ListingTrack[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Side(source);
@@ -362,6 +695,7 @@ export namespace project {
 	        this.missing = source["missing"];
 	        this.staged = source["staged"];
 	        this.markers = this.convertValues(source["markers"], Marker);
+	        this.listing = this.convertValues(source["listing"], ListingTrack);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -462,6 +796,7 @@ export namespace project {
 	}
 	
 	
+	
 	export class RecentEntry {
 	    path: string;
 	    name: string;
@@ -514,6 +849,7 @@ export namespace recorder {
 	    channels: number;
 	    side: string;
 	    importSide: string;
+	    autoStoppedSide: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Status(source);
@@ -530,6 +866,42 @@ export namespace recorder {
 	        this.channels = source["channels"];
 	        this.side = source["side"];
 	        this.importSide = source["importSide"];
+	        this.autoStoppedSide = source["autoStoppedSide"];
+	    }
+	}
+
+}
+
+export namespace repair {
+	
+	export class Analysis {
+	    channels: number;
+	    dc: number[];
+	    dcFix: boolean;
+	    humHz: number;
+	    humDb: number;
+	    balanceDb: number;
+	    balanceFix: boolean;
+	    delay: number;
+	    delayFix: boolean;
+	    corr: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Analysis(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.channels = source["channels"];
+	        this.dc = source["dc"];
+	        this.dcFix = source["dcFix"];
+	        this.humHz = source["humHz"];
+	        this.humDb = source["humDb"];
+	        this.balanceDb = source["balanceDb"];
+	        this.balanceFix = source["balanceFix"];
+	        this.delay = source["delay"];
+	        this.delayFix = source["delayFix"];
+	        this.corr = source["corr"];
 	    }
 	}
 
@@ -544,6 +916,8 @@ export namespace settings {
 	    coverMaxMB: number;
 	    embedCover: boolean;
 	    exportOriginal: boolean;
+	    replayGain: boolean;
+	    nameTemplate: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExportPrefs(source);
@@ -557,7 +931,41 @@ export namespace settings {
 	        this.coverMaxMB = source["coverMaxMB"];
 	        this.embedCover = source["embedCover"];
 	        this.exportOriginal = source["exportOriginal"];
+	        this.replayGain = source["replayGain"];
+	        this.nameTemplate = source["nameTemplate"];
 	    }
+	}
+	export class ExportPreset {
+	    name: string;
+	    prefs: ExportPrefs;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExportPreset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.prefs = this.convertValues(source["prefs"], ExportPrefs);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class Rect {
 	    x: number;
@@ -609,6 +1017,10 @@ export namespace settings {
 	    window?: Window;
 	    editorWindow?: Rect;
 	    export?: ExportPrefs;
+	    autoStop: boolean;
+	    autoStopSec: number;
+	    onlineLookup: boolean;
+	    exportPresets?: ExportPreset[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -627,6 +1039,10 @@ export namespace settings {
 	        this.window = this.convertValues(source["window"], Window);
 	        this.editorWindow = this.convertValues(source["editorWindow"], Rect);
 	        this.export = this.convertValues(source["export"], ExportPrefs);
+	        this.autoStop = source["autoStop"];
+	        this.autoStopSec = source["autoStopSec"];
+	        this.onlineLookup = source["onlineLookup"];
+	        this.exportPresets = this.convertValues(source["exportPresets"], ExportPreset);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -646,6 +1062,37 @@ export namespace settings {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace spectrum {
+	
+	export class Picture {
+	    fromMs: number;
+	    toMs: number;
+	    columns: number;
+	    rows: number;
+	    minHz: number;
+	    maxHz: number;
+	    floorDb: number;
+	    levels: number[];
+	
+	    static createFrom(source: any = {}) {
+	        return new Picture(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.fromMs = source["fromMs"];
+	        this.toMs = source["toMs"];
+	        this.columns = source["columns"];
+	        this.rows = source["rows"];
+	        this.minHz = source["minHz"];
+	        this.maxHz = source["maxHz"];
+	        this.floorDb = source["floorDb"];
+	        this.levels = source["levels"];
+	    }
 	}
 
 }

@@ -70,6 +70,8 @@ type Side struct {
 	Staged bool `json:"staged,omitempty"`
 	// Markers are the track start and end positions inside the side.
 	Markers []Marker `json:"markers,omitempty"`
+	// Listing is the side's looked-up track listing, used by Split by tracklist.
+	Listing []ListingTrack `json:"listing,omitempty"`
 }
 
 // Leftover is an unsaved take kept in the staging folder, for example after a crash.
@@ -214,11 +216,15 @@ type Project struct {
 	// staged holds finished recordings and imports waiting for Save; their audio
 	// lives in the staging folder and the project's side files are untouched.
 	staged map[string]Side
+	// deleted marks sides removed until Save; their files stay on disk until then.
+	deleted map[string]bool
 	// descStale is set when Save moved side files but could not write the descriptor.
 	descStale  bool
 	draftCover *coverDraft
 	// draftMarkers holds marker edits per side until Save.
 	draftMarkers map[string][]Marker
+	// draftListing holds track listing changes per side until Save.
+	draftListing map[string][]ListingTrack
 	// historyTouch orders history activity across sides.
 	historyTouch int64
 	// history is the per-side undo/redo list of editor changes.
@@ -376,7 +382,7 @@ func (p *Project) Dirty() bool {
 }
 
 func (p *Project) dirtyLocked() bool {
-	return p.draftName != nil || p.draftCover != nil || p.draftDetails != nil || len(p.staged) > 0 || len(p.draftMarkers) > 0 || p.descStale
+	return p.draftName != nil || p.draftCover != nil || p.draftDetails != nil || len(p.staged) > 0 || len(p.draftMarkers) > 0 || len(p.draftListing) > 0 || len(p.deleted) > 0 || p.descStale
 }
 
 // SidePath returns the absolute path of a side's final file.
@@ -408,7 +414,11 @@ func (p *Project) stagedPath(key string) (string, error) { return p.stagingPath(
 func (p *Project) AudioPath(key string) (string, error) {
 	p.mu.Lock()
 	_, st := p.staged[key]
+	gone := p.deleted[key]
 	p.mu.Unlock()
+	if gone {
+		return "", i18n.New("project.sideHasNoAudio", key)
+	}
 	if st {
 		return p.stagedPath(key)
 	}
@@ -421,7 +431,11 @@ func (p *Project) SideExists(key string) bool {
 	p.mu.Lock()
 	_, ok := p.sides[key]
 	_, st := p.staged[key]
+	gone := p.deleted[key]
 	p.mu.Unlock()
+	if gone {
+		return false
+	}
 	if ok || st {
 		return true
 	}
@@ -515,7 +529,12 @@ func (p *Project) StageSide(key, part string, s Side) error {
 	s.Markers = nil
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if s.Listing == nil {
+		s.Listing = p.effectiveListingLocked(key)
+	}
 	delete(p.draftMarkers, key)
+	delete(p.draftListing, key)
+	delete(p.deleted, key)
 	p.clearHistoryLocked(key)
 	if part != dst {
 		if err := os.Rename(part, dst); err != nil {
@@ -540,7 +559,11 @@ func (p *Project) SetSide(key string, s Side) error {
 	s.Markers = nil
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if s.Listing == nil {
+		s.Listing = p.effectiveListingLocked(key)
+	}
 	delete(p.draftMarkers, key)
+	delete(p.draftListing, key)
 	p.clearHistoryLocked(key)
 	if p.sides == nil {
 		p.sides = map[string]Side{}
@@ -578,13 +601,13 @@ func (p *Project) Info() Info {
 		}
 	}
 	for k, s := range p.sides {
+		if p.deleted[k] {
+			continue
+		}
 		if _, err := os.Stat(filepath.Join(p.dir, filepath.FromSlash(s.File))); err != nil {
 			s.Missing = true
 		}
-		if d, ok := p.draftMarkers[k]; ok {
-			s.Markers = d
-		}
-		info.Sides[k] = s
+		info.Sides[k] = p.withDraftsLocked(k, s)
 	}
 	for k, s := range p.staged {
 		if w, _ := p.stagedPath(k); w != "" {
@@ -592,10 +615,7 @@ func (p *Project) Info() Info {
 				s.Missing = true
 			}
 		}
-		if d, ok := p.draftMarkers[k]; ok {
-			s.Markers = d
-		}
-		info.Sides[k] = s
+		info.Sides[k] = p.withDraftsLocked(k, s)
 	}
 	p.mu.Unlock()
 	info.Leftovers = p.Leftovers()
@@ -628,13 +648,21 @@ func (p *Project) effectiveDetailsLocked() Details {
 // SetDetails stages the artist, compilation flag, year, album and genre; Save writes them.
 // An invalid value changes nothing.
 func (p *Project) SetDetails(artist string, compilation bool, year, album, genre string) error {
-	d, err := normalizeDetails(Details{Artist: artist, Compilation: compilation, Year: year, Album: album, Genre: genre}, true)
+	return p.stageDetails(func(d *Details) {
+		d.Artist, d.Compilation, d.Year, d.Album, d.Genre = artist, compilation, year, album, genre
+	})
+}
+
+func (p *Project) stageDetails(change func(*Details)) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	d := p.effectiveDetailsLocked()
+	was := d.Compilation
+	change(&d)
+	d, err := normalizeDetails(d, true)
 	if err != nil {
 		return err
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	was := p.effectiveDetailsLocked().Compilation
 	if d == p.details {
 		p.draftDetails = nil
 	} else {
@@ -659,6 +687,14 @@ func (p *Project) SetCover(src string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
+	}
+	return p.SetCoverData(data)
+}
+
+// SetCoverData stages PNG or JPEG bytes as the cover, like SetCover.
+func (p *Project) SetCoverData(data []byte) error {
+	if len(data) > MaxCoverBytes {
+		return i18n.New("project.theImageIsTooLarge")
 	}
 	_, format, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || (format != "png" && format != "jpeg") {
@@ -691,7 +727,7 @@ func (p *Project) Discard() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.draftName, p.draftCover, p.draftDetails, p.descStale = nil, nil, nil, false
-	p.draftMarkers = nil
+	p.draftMarkers, p.draftListing, p.deleted = nil, nil, nil
 	p.clearAllHistoryLocked()
 	for k := range p.staged {
 		if w, err := p.stagedPath(k); err == nil {
@@ -773,17 +809,26 @@ func (p *Project) Save() error {
 		p.sides[k] = st
 		delete(p.staged, k)
 	}
-	oldMarkers := map[string][]Marker{}
-	for k, d := range p.draftMarkers {
-		s := p.sides[k]
-		oldMarkers[k] = s.Markers
-		s.Markers = d
-		p.sides[k] = s
+	oldSides := map[string]Side{}
+	var removed []string
+	for k := range p.deleted {
+		if s, ok := p.sides[k]; ok {
+			oldSides[k] = s
+			delete(p.sides, k)
+			removed = append(removed, s.File)
+		}
+	}
+	for k, s := range p.sides {
+		if _, ok := p.draftMarkers[k]; !ok {
+			if _, ok := p.draftListing[k]; !ok {
+				continue
+			}
+		}
+		oldSides[k] = s
+		p.sides[k] = p.withDraftsLocked(k, s)
 	}
 	if err := p.saveLocked(); err != nil {
-		for k, m := range oldMarkers {
-			s := p.sides[k]
-			s.Markers = m
+		for k, s := range oldSides {
 			p.sides[k] = s
 		}
 		p.name, p.cover, p.details = oldName, oldCover, oldDetails
@@ -792,13 +837,16 @@ func (p *Project) Save() error {
 		}
 		return err
 	}
+	for _, f := range removed {
+		_ = os.Remove(filepath.Join(p.dir, filepath.FromSlash(f)))
+	}
 	for _, e := range stale {
 		if e != p.cover {
 			_ = os.Remove(filepath.Join(p.dir, e))
 		}
 	}
 	p.draftName, p.draftCover, p.draftDetails, p.descStale = nil, nil, nil, false
-	p.draftMarkers = nil
+	p.draftMarkers, p.draftListing, p.deleted = nil, nil, nil
 	p.clearAllHistoryLocked()
 	p.staged = nil
 	return nil
@@ -827,15 +875,12 @@ func (p *Project) SaveAs(ctx context.Context, parent, name string, progress func
 	var files []copyJob
 	var total int64
 	for k, s := range p.sides {
-		if _, pending := p.staged[k]; pending {
+		if _, pending := p.staged[k]; pending || p.deleted[k] {
 			continue
 		}
 		src := filepath.Join(p.dir, filepath.FromSlash(s.File))
 		if st, err := os.Stat(src); err == nil {
-			if d, ok := p.draftMarkers[k]; ok {
-				s.Markers = d
-			}
-			sides[k] = s
+			sides[k] = p.withDraftsLocked(k, s)
 			files = append(files, copyJob{src, s.File})
 			total += st.Size()
 		}
@@ -844,10 +889,7 @@ func (p *Project) SaveAs(ctx context.Context, parent, name string, progress func
 		w, _ := p.stagedPath(k)
 		if st, err := os.Stat(w); err == nil {
 			s.Staged = false
-			if d, ok := p.draftMarkers[k]; ok {
-				s.Markers = d
-			}
-			sides[k] = s
+			sides[k] = p.withDraftsLocked(k, s)
 			files = append(files, copyJob{w, s.File})
 			total += st.Size()
 		}
@@ -967,6 +1009,9 @@ func (p *Project) save() error {
 	return p.saveLocked()
 }
 
+// removedKeys are descriptor fields of features that no longer exist; Save drops them.
+var removedKeys = []string{"notes", "tapeBrand", "tapeType", "noiseReduction"}
+
 // saveLocked writes the saved (not staged) state.
 func (p *Project) saveLocked() error {
 	p.updatedAt = time.Now().UTC().Truncate(time.Second)
@@ -995,6 +1040,9 @@ func (p *Project) saveLocked() error {
 			return err
 		}
 	}
+	for _, k := range removedKeys {
+		delete(p.raw, k)
+	}
 	b, err := json.MarshalIndent(p.raw, "", "  ")
 	if err != nil {
 		return err
@@ -1008,6 +1056,7 @@ func (p *Project) RemoveSide(key string) error {
 	defer p.mu.Unlock()
 	delete(p.sides, key)
 	delete(p.draftMarkers, key)
+	delete(p.draftListing, key)
 	p.clearHistoryLocked(key)
 	return p.saveLocked()
 }

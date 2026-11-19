@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -94,7 +95,7 @@ func (a *App) ExportPrefs() settings.ExportPrefs {
 }
 
 // ExportConflicts lists the files in dir that the export would replace.
-func (a *App) ExportConflicts(format, dir string, withOriginals bool) ([]string, error) {
+func (a *App) ExportConflicts(format, dir string, withOriginals bool, nameTemplate string) ([]string, error) {
 	p, err := a.withProject()
 	if err != nil {
 		return nil, err
@@ -104,12 +105,32 @@ func (a *App) ExportConflicts(format, dir string, withOriginals bool) ([]string,
 		return nil, err
 	}
 	out := []string{}
-	for _, n := range in.FilesFor(exporter.Options{Format: format, ExportOriginal: withOriginals}) {
+	for _, n := range in.FilesFor(exporter.Options{Format: format, ExportOriginal: withOriginals, NameTemplate: nameTemplate}) {
 		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
 			out = append(out, n)
 		}
 	}
 	return out, nil
+}
+
+// ExportNameExample returns the file name of the first track under the
+// template, or the reason the template cannot be used.
+func (a *App) ExportNameExample(format, nameTemplate string) (string, error) {
+	if err := exporter.CheckTemplate(nameTemplate); err != nil {
+		return "", err
+	}
+	p, err := a.withProject()
+	if err != nil {
+		return "", err
+	}
+	in, err := exportInput(p)
+	if err != nil {
+		return "", err
+	}
+	if names := in.FilesFor(exporter.Options{Format: format, NameTemplate: nameTemplate}); len(names) > 0 && format != exporter.FormatFLACCue {
+		return names[0], nil
+	}
+	return "", nil
 }
 
 // ExportTracks writes the marked tracks into opts.Dir as a cancellable job.
@@ -146,7 +167,10 @@ func (a *App) ExportTracks(opts exporter.Options) (ExportResult, error) {
 	if cfg.Export != nil {
 		prefs = *cfg.Export
 	}
-	prefs.Format, prefs.EmbedCover, prefs.ExportOriginal = opts.Format, opts.EmbedCover, opts.ExportOriginal
+	prefs.Format, prefs.EmbedCover, prefs.ExportOriginal, prefs.ReplayGain = opts.Format, opts.EmbedCover, opts.ExportOriginal, opts.ReplayGain
+	if opts.Format != exporter.FormatFLACCue && opts.NameTemplate != "" {
+		prefs.NameTemplate = opts.NameTemplate
+	}
 	if opts.Format != exporter.FormatFLACCue && opts.CoverMaxMB > 0 {
 		prefs.CoverMaxMB = opts.CoverMaxMB
 	}
@@ -180,4 +204,71 @@ func (a *App) RevealFolder(dir string) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
+}
+
+// ExportPresets lists the saved export presets.
+func (a *App) ExportPresets() []settings.ExportPreset {
+	if p := a.settings.Load().ExportPresets; p != nil {
+		return p
+	}
+	return []settings.ExportPreset{}
+}
+
+// SaveExportPreset stores the dialog choices (without the folder) under name.
+// An existing name (ignoring case) is replaced only when replace is set.
+func (a *App) SaveExportPreset(name string, opts exporter.Options, replace bool) ([]settings.ExportPreset, error) {
+	name, ok := settings.PresetName(name)
+	if !ok {
+		return a.ExportPresets(), i18n.New("export.presetName", settings.MaxPresetNameLen)
+	}
+	if opts.NameTemplate != "" {
+		if err := exporter.CheckTemplate(opts.NameTemplate); err != nil {
+			return a.ExportPresets(), err
+		}
+	}
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	cfg := a.settings.Load()
+	prefs := settings.ExportPrefs{
+		Format: opts.Format, Bitrate: opts.Bitrate, WAVRate: opts.SampleRate, CoverMaxMB: opts.CoverMaxMB,
+		EmbedCover: opts.EmbedCover, ExportOriginal: opts.ExportOriginal, ReplayGain: opts.ReplayGain, NameTemplate: opts.NameTemplate,
+	}.Normalize()
+	preset := settings.ExportPreset{Name: name, Prefs: prefs}
+	found := false
+	for i, p := range cfg.ExportPresets {
+		if strings.EqualFold(p.Name, name) {
+			if !replace {
+				return cfg.ExportPresets, i18n.New("export.presetExists", p.Name)
+			}
+			cfg.ExportPresets[i], found = preset, true
+		}
+	}
+	if !found {
+		if len(cfg.ExportPresets) >= settings.MaxPresets {
+			return cfg.ExportPresets, i18n.New("export.presetsFull", settings.MaxPresets)
+		}
+		cfg.ExportPresets = append(cfg.ExportPresets, preset)
+	}
+	if err := a.settings.Save(cfg); err != nil {
+		return cfg.ExportPresets, err
+	}
+	return a.settings.Load().ExportPresets, nil
+}
+
+// DeleteExportPreset removes the preset called name.
+func (a *App) DeleteExportPreset(name string) ([]settings.ExportPreset, error) {
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	cfg := a.settings.Load()
+	out := []settings.ExportPreset{}
+	for _, p := range cfg.ExportPresets {
+		if !strings.EqualFold(p.Name, name) {
+			out = append(out, p)
+		}
+	}
+	cfg.ExportPresets = out
+	if err := a.settings.Save(cfg); err != nil {
+		return cfg.ExportPresets, err
+	}
+	return out, nil
 }

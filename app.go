@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/afrunt/tape2digi/internal/i18n"
+	"github.com/afrunt/tape2digi/internal/lookup"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,16 +32,19 @@ type App struct {
 	data     appdata.Dir
 	settings *settings.Store
 	// settingsMu makes load-modify-save of settings atomic across bindings.
-	settingsMu sync.Mutex
-	recents    *project.Recents
-	src        audio.Source
-	rec        *recorder.Service
-	player     *audio.Player
-	playSide   string
-	peakMu     sync.Mutex
-	peakCache  map[string]peakEntry
-	splitCache map[string]splitEntry
-	envCache   map[string]envEntry
+	settingsMu  sync.Mutex
+	recents     *project.Recents
+	src         audio.Source
+	rec         *recorder.Service
+	player      *audio.Player
+	playSide    string
+	clips       clipScanner
+	peakMu      sync.Mutex
+	peakCache   map[string]peakEntry
+	splitCache  map[string]splitEntry
+	envCache    map[string]envEntry
+	loudCache   map[string]loudEntry
+	repairCache map[string]repairEntry
 
 	mu         sync.Mutex
 	proj       *project.Project
@@ -51,6 +55,13 @@ type App struct {
 	saveAsItem *menu.MenuItem
 	newItem    *menu.MenuItem
 	exportItem *menu.MenuItem
+	lookupMenu *menu.MenuItem // File > Look up tracks
+	tracksOK   bool           // the page reports a side with a complete track
+	lookupItem *menu.MenuItem
+
+	lookup     *lookup.Client
+	lookupMu   sync.Mutex
+	lookupLast lookup.Detail // the release last shown by LookupRelease
 }
 
 // ImportProgress is the payload of the "import" event.
@@ -76,7 +87,7 @@ func NewApp() *App {
 	}
 	store := settings.NewStore(dir)
 	i18n.SetLocale(store.Load().Language)
-	return &App{data: dir, settings: store, recents: project.NewRecents(dir)}
+	return &App{data: dir, settings: store, recents: project.NewRecents(dir), lookup: lookup.New(version)}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -92,8 +103,14 @@ func (a *App) startup(ctx context.Context) {
 		OnLevel: func(l []audio.ChannelLevel) { runtime.EventsEmit(a.ctx, "level", l) },
 		OnState: func(s recorder.Status) { runtime.EventsEmit(a.ctx, "state", s) },
 		OnError: func(m string) { runtime.EventsEmit(a.ctx, "error", m) },
+		OnStopped: func() {
+			runtime.EventsEmit(a.ctx, "project", a.CurrentProject())
+			go a.refreshClips()
+		},
 	})
-	_ = a.rec.SetMonitorDevice(a.settings.Load().MonitorDeviceName)
+	cfg := a.settings.Load()
+	_ = a.rec.SetMonitorDevice(cfg.MonitorDeviceName)
+	a.rec.SetAutoStop(cfg.AutoStop, time.Duration(cfg.AutoStopSec)*time.Second)
 	a.restoreWindow()
 }
 
@@ -166,6 +183,7 @@ func (a *App) SaveEditorWindow(x, y, w, h int) error {
 func (a *App) shutdown(_ context.Context) {
 	a.stopPlayback()
 	a.CancelJob()
+	a.stopClips()
 	for i := 0; i < 40 && a.jobRunning(); i++ {
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -211,6 +229,22 @@ func (a *App) SetLanguage(lang string) error {
 		runtime.MenuUpdateApplicationMenu(a.ctx)
 	}
 	return nil
+}
+
+// SetAutoStop turns stopping a take after end-of-tape silence on or off and
+// sets the silence interval in seconds (10 to 600); it also applies to a
+// running take.
+func (a *App) SetAutoStop(on bool, seconds int) error {
+	if seconds < settings.MinAutoStopSec || seconds > settings.MaxAutoStopSec {
+		return i18n.New("app.autoStopRange", settings.MinAutoStopSec, settings.MaxAutoStopSec)
+	}
+	a.settingsMu.Lock()
+	cfg := a.settings.Load()
+	cfg.AutoStop, cfg.AutoStopSec = on, seconds
+	err := a.settings.Save(cfg)
+	a.settingsMu.Unlock()
+	a.rec.SetAutoStop(on, time.Duration(seconds)*time.Second)
+	return err
 }
 
 // SetTheme persists the UI theme ("dark" or "light").
@@ -323,6 +357,7 @@ func (a *App) StartRecording(side string, overwrite bool) error {
 		return i18n.New("app.waitForTheCurrentOperation")
 	}
 	a.stopPlayback()
+	a.stopClips()
 	return a.rec.Start(side, overwrite)
 }
 
@@ -343,6 +378,7 @@ func (a *App) ImportSide(side, path string, overwrite bool) (project.Info, error
 	_, err = a.rec.ImportSide(ctx, side, path, overwrite, func(d, t int64) {
 		runtime.EventsEmit(a.ctx, "import", ImportProgress{Kind: "import", Side: side, Done: d, Total: t})
 	})
+	go a.refreshClips()
 	return a.CurrentProject(), err
 }
 
@@ -360,6 +396,7 @@ func (a *App) DiscardPart(side string) (project.Info, error) {
 
 // beginJob reserves the single long-running job slot (import or Save As).
 func (a *App) beginJob() (context.Context, func(), error) {
+	a.stopClips()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.job != nil || a.proj == nil {
@@ -437,6 +474,7 @@ func (a *App) activate(p *project.Project) (project.Info, error) {
 	a.mu.Unlock()
 	_ = a.recents.Touch(p.Dir(), p.Name())
 	a.updateMenu()
+	go a.refreshClips()
 	return p.Info(), nil
 }
 
@@ -446,6 +484,7 @@ func (a *App) CloseProject() error {
 		return i18n.New("app.waitForTheCurrentOperation")
 	}
 	a.stopPlayback()
+	a.stopClips()
 	if err := a.rec.CloseInput(); err != nil {
 		return err
 	}
@@ -548,6 +587,7 @@ func (a *App) SaveProjectAs(parent, name string) (project.Info, error) {
 	a.proj = np
 	a.mu.Unlock()
 	_ = a.recents.Touch(np.Dir(), np.Name())
+	go a.refreshClips()
 	return np.Info(), nil
 }
 
@@ -689,10 +729,14 @@ func (a *App) buildMenu() *menu.Menu {
 	a.saveAsItem = file.AddText(i18n.T("app.menu.saveAs"), keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), func(*menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:saveAs")
 	})
+	a.lookupMenu = file.AddText(i18n.T("app.menu.lookup"), nil, func(*menu.CallbackData) {
+		runtime.EventsEmit(a.ctx, "menu:lookup")
+	})
 	a.exportItem = file.AddText(i18n.T("app.menu.export"), keys.CmdOrCtrl("e"), func(*menu.CallbackData) {
 		runtime.EventsEmit(a.ctx, "menu:export")
 	})
 	a.saveItem.Disabled, a.saveAsItem.Disabled, a.newItem.Disabled, a.exportItem.Disabled = !open, !open, !open, !open
+	a.lookupMenu.Disabled = !open || !a.tracksOK
 	a.menuMu.Unlock()
 
 	root := menu.NewMenu()
@@ -701,6 +745,7 @@ func (a *App) buildMenu() *menu.Menu {
 	}
 	root.Append(menu.SubMenu(i18n.T("app.menu.file"), file))
 	root.Append(menu.SubMenu(i18n.T("app.menu.edit"), a.buildEditMenu()))
+	root.Append(menu.SubMenu(i18n.T("app.menu.tools"), a.buildToolsMenu()))
 	return root
 }
 
@@ -735,7 +780,11 @@ func (a *App) updateMenu() {
 	a.mu.Lock()
 	open := a.proj != nil
 	a.mu.Unlock()
+	if !open {
+		a.tracksOK = false
+	}
 	a.saveItem.Disabled, a.saveAsItem.Disabled, a.newItem.Disabled, a.exportItem.Disabled = !open, !open, !open, !open
+	a.lookupMenu.Disabled = !open || !a.tracksOK
 	a.menuMu.Unlock()
 	runtime.MenuUpdateApplicationMenu(a.ctx)
 }

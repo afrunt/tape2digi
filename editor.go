@@ -299,7 +299,10 @@ func (a *App) dropPeaks(side string) {
 	delete(a.peakCache, side)
 	delete(a.splitCache, side)
 	delete(a.envCache, side)
+	delete(a.loudCache, side)
+	delete(a.repairCache, side)
 	a.peakMu.Unlock()
+	go a.refreshClips()
 }
 
 // EditHistory reports whether the side has a change to undo or redo.
@@ -316,6 +319,23 @@ func (a *App) UndoSide(side string) (project.Info, error) { return a.stepHistory
 
 // RedoSide applies the editor change that was last undone.
 func (a *App) RedoSide(side string) (project.Info, error) { return a.stepHistory(side, false) }
+
+// DeleteSide removes the side's recording until Save; Undo brings it back.
+func (a *App) DeleteSide(side string) (project.Info, error) {
+	p, err := a.withProject()
+	if err != nil {
+		return project.Info{}, err
+	}
+	if err := a.editorBusy(); err != nil {
+		return p.Info(), err
+	}
+	a.stopPlayback()
+	if err := p.DeleteSide(side); err != nil {
+		return p.Info(), err
+	}
+	a.dropPeaks(side)
+	return p.Info(), nil
+}
 
 // EditHistoryLast reports what an undo or redo from the main window would act on.
 func (a *App) EditHistoryLast() (project.LastHistory, error) {
@@ -654,5 +674,49 @@ func (a *App) ResetMarkers(side string) (project.Info, error) {
 		return p.Info(), nil
 	}
 	err = p.ReplaceMarkers(side, nil)
+	return p.Info(), err
+}
+
+// NamedTracks reports a batch rename: how many pasted titles were used and
+// how many were left over because the side has fewer tracks.
+type NamedTracks struct {
+	Project project.Info `json:"project"`
+	Used    int          `json:"used"`
+	Extra   int          `json:"extra"`
+}
+
+// NameTracks titles the side's tracks in order from pasted text, one title
+// per line, as one undoable change.
+func (a *App) NameTracks(side, text string) (NamedTracks, error) {
+	p, err := a.withProject()
+	if err != nil {
+		return NamedTracks{}, err
+	}
+	if err := a.editorBusy(); err != nil {
+		return NamedTracks{Project: p.Info()}, err
+	}
+	titles := project.ParseTitleList(text)
+	used, err := p.NameTracks(side, titles)
+	return NamedTracks{Project: p.Info(), Used: used, Extra: len(titles) - used}, err
+}
+
+// NumberTracks fills the side's empty titles with pattern ("Track {n}"); the
+// numbers continue across sides like the track table.
+func (a *App) NumberTracks(side, pattern string) (project.Info, error) {
+	p, err := a.withProject()
+	if err != nil {
+		return project.Info{}, err
+	}
+	if err := a.editorBusy(); err != nil {
+		return p.Info(), err
+	}
+	first := 1
+	for _, k := range project.SideKeys {
+		if k == side {
+			break
+		}
+		first += project.TrackCount(p.Markers(k))
+	}
+	err = p.NumberTracks(side, first, pattern)
 	return p.Info(), err
 }

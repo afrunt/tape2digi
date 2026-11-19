@@ -1,0 +1,7 @@
+{"id":"22222222-2222-2222-2222-222222222222","title":"Album","date":"1994","country":"UA","artist-credit":[{"name":"Artist","joinphrase":"","artist":{"name":"Artist"}}],
+ "media":[{"position":1,"format":"Cassette","title":"","track-count":4,"tracks":[
+  {"position":1,"number":"A1","title":"One","length":180000,"artist-credit":[{"name":"Artist"}],"recording":{"title":"One","length":180500}},
+  {"position":2,"number":"A2","title":"Two","length":null,"artist-credit":[{"name":"Guest"}],"recording":{"title":"Two","length":200000}},
+  {"position":3,"number":"B1","title":"Three","length":210000,"artist-credit":[{"name":"Artist"}]},
+  {"position":4,"number":"B2","title":"Four","length":190000,"artist-credit":[{"name":"Artist"}]}
+ ]}]}

@@ -166,3 +166,81 @@ func TestCompilationChangeIsUndoable(t *testing.T) {
 		t.Fatalf("redo: %v", err)
 	}
 }
+
+func TestDeleteSavedSideUndoRedoAndSave(t *testing.T) {
+	p := newSavedSide(t)
+	file := filepath.Join(p.Dir(), "side-A.wav")
+	if err := p.DeleteSide("A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := p.Info().Sides["A"]; ok || !p.Info().Dirty || p.SideExists("A") {
+		t.Fatal("deleted side must be hidden and the project dirty")
+	}
+	if p.DeleteSide("A") == nil || p.AddMarker("A", MarkerStart, 1000) == nil {
+		t.Fatal("a deleted side accepts no changes")
+	}
+	if last := p.LastHistory(); last.UndoSide != "A" {
+		t.Fatalf("last history %+v", last)
+	}
+	if audio, err := p.Undo("A"); err != nil || !audio {
+		t.Fatalf("undo: %v %v", audio, err)
+	}
+	if _, ok := p.Info().Sides["A"]; !ok {
+		t.Fatal("undo must restore the side")
+	}
+	if _, err := p.Redo("A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatal("the file stays until Save")
+	}
+	if err := p.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Fatal("Save must remove the side file")
+	}
+	q, err := Open(p.Dir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := q.Info().Sides["A"]; ok {
+		t.Fatal("the descriptor must not list the side")
+	}
+}
+
+func TestDeleteStagedSideUndoRestoresAudio(t *testing.T) {
+	p := newSavedSide(t)
+	_, dst, err := p.EditPaths("A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(dst+".amp", []byte("edited"), 0o644)
+	if err := p.ApplyEdit("A", dst+".amp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.DeleteSide("A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.AudioPath("A"); err == nil {
+		t.Fatal("a deleted side has no audio path")
+	}
+	if _, err := p.Undo("A"); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := p.AudioPath("A")
+	if b, _ := os.ReadFile(path); string(b) != "edited" || !p.Info().Sides["A"].Staged {
+		t.Fatalf("undo must bring back the staged edit, got %q", b)
+	}
+}
+
+func TestDiscardCancelsDeletion(t *testing.T) {
+	p := newSavedSide(t)
+	if err := p.DeleteSide("A"); err != nil {
+		t.Fatal(err)
+	}
+	p.Discard()
+	if _, ok := p.Info().Sides["A"]; !ok || p.Info().Dirty {
+		t.Fatal("Discard must bring the side back")
+	}
+}

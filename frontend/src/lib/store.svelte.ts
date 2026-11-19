@@ -1,6 +1,7 @@
 import { t } from './i18n.svelte'
 import { ClipboardGetText, EventsOn } from '../../wailsjs/runtime/runtime'
-import { project, recorder } from '../../wailsjs/go/models'
+import { main, project, recorder } from '../../wailsjs/go/models'
+import { SideClips } from '../../wailsjs/go/main/App'
 
 export interface ChannelLevel {
   peakDb: number
@@ -10,7 +11,7 @@ export interface ChannelLevel {
 export type Levels = ChannelLevel[]
 
 export interface JobProgress {
-  kind: 'import' | 'saveAs' | 'amplify' | 'denoise' | 'export'
+  kind: 'import' | 'saveAs' | 'amplify' | 'denoise' | 'loudness' | 'normalize' | 'repairScan' | 'repair' | 'export'
   side: string
   done: number
   total: number
@@ -47,13 +48,29 @@ export const ui = $state({
   job: null as JobProgress | null,
   saveAsOpen: false,
   exportOpen: false,
+  lookupOpen: false,
+  // Mirrors settings.onlineLookup.
+  onlineLookup: false,
   // Side shown in the editor modal, or null.
   edit: null as string | null,
   play: null as { side: 'A' | 'B'; startMs: number; endMs: number; num: string; title: string } | null,
   quit: null as QuitRequest | null,
   // Bumped when the cover changes so the <img> reloads.
   coverV: 0,
+  // Clipped places per side from the background scan; absent until known.
+  clips: {} as Record<string, main.ClipSummary>,
 })
+
+function refreshClipState() {
+  for (const s of SIDES) {
+    SideClips(s)
+      .then((c) => {
+        if (c.known) ui.clips[s] = c
+        else delete ui.clips[s]
+      })
+      .catch(() => delete ui.clips[s])
+  }
+}
 
 export const SIDES = ['A', 'B'] as const
 
@@ -82,6 +99,14 @@ export function wireEvents() {
   EventsOn('project', (p: project.Info) => {
     ui.project = p
     ui.coverV++
+    if (p) refreshClipState()
+    else ui.clips = {}
+  })
+  EventsOn('clips', (c: main.ClipSummary) => {
+    ui.clips[c.side] = c
+  })
+  EventsOn('settings', (s: { onlineLookup: boolean }) => {
+    ui.onlineLookup = !!s.onlineLookup
   })
   EventsOn('import', (j: JobProgress) => {
     ui.job = j
@@ -102,6 +127,7 @@ export function wireEvents() {
   EventsOn('menu:saveAs', () => {
     if (ui.project) ui.saveAsOpen = true
   })
+  EventsOn('menu:lookup', () => hooks.lookUp?.())
   EventsOn('menu:export', () => hooks.exportTracks?.())
   EventsOn('quit-request', (q: QuitRequest) => {
     ui.quit = q
@@ -119,7 +145,8 @@ export const hooks: {
   undoMain: (() => void) | null
   redoMain: (() => void) | null
   exportTracks: (() => void) | null
-} = { newProject: null, openProject: null, undo: null, redo: null, undoMain: null, redoMain: null, exportTracks: null }
+  lookUp: (() => void) | null
+} = { newProject: null, openProject: null, undo: null, redo: null, undoMain: null, redoMain: null, exportTracks: null, lookUp: null }
 
 const typedInputs = new Set(['text', 'search', 'number', 'email', 'url', 'tel', 'password'])
 

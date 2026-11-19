@@ -212,3 +212,38 @@ func TestEnvelopeLevelsPerWindow(t *testing.T) {
 		t.Fatalf("silent windows %v", env[2:])
 	}
 }
+
+func TestAnalyzeFindsAndMergesClips(t *testing.T) {
+	const rate = 1000
+	f := Format{SampleRate: rate, Channels: 2, BitDepth: 16}
+	frames := make([][2]int16, 10*rate)
+	clip := func(at, n, ch int, v int16) {
+		for i := 0; i < n; i++ {
+			frames[at+i][ch] = v
+		}
+	}
+	clip(100, 1, 0, 32767)   // a single full-scale sample is not a clip
+	clip(1000, 3, 0, 32767)  // place 1
+	clip(1500, 4, 1, -32768) // merges with place 1 (under 1 s)
+	clip(4000, 3, 1, 32766)  // place 2: within 1 LSB
+	clip(7000, 2, 0, 32767)  // too short
+	clip(8000, 5, 0, -32767) // place 3: within 1 LSB of -32768
+	path := filepath.Join(t.TempDir(), "c.wav")
+	fh, _ := os.Create(path)
+	w, _ := NewWriter(fh, f)
+	buf := make([]byte, 0, len(frames)*4)
+	for _, fr := range frames {
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(fr[0]))
+		buf = binary.LittleEndian.AppendUint16(buf, uint16(fr[1]))
+	}
+	_, _ = w.Write(buf)
+	_ = w.Close()
+	_ = fh.Close()
+	p, err := Analyze(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.ClipCount != 3 || len(p.Clips) != 3 || p.Clips[0] != 1000 || p.Clips[1] != 4000 || p.Clips[2] != 8000 {
+		t.Fatalf("clips %d %v", p.ClipCount, p.Clips)
+	}
+}

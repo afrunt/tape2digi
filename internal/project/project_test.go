@@ -615,3 +615,32 @@ func TestGenreDetail(t *testing.T) {
 		t.Fatal("genre over 100 characters must be rejected")
 	}
 }
+
+func TestSaveDropsRemovedTapeKeys(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Create(dir, "p"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, DescriptorName)
+	b, _ := os.ReadFile(path)
+	b = bytes.Replace(b, []byte("{"), []byte(`{"notes": "old", "tapeBrand": "TDK", "tapeType": "II", "noiseReduction": "dolbyB", "keep": 1,`), 1)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Save(); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(path)
+	for _, k := range []string{"notes", "tapeBrand", "tapeType", "noiseReduction"} {
+		if bytes.Contains(b, []byte(`"`+k+`"`)) {
+			t.Fatalf("%s kept: %s", k, b)
+		}
+	}
+	if !bytes.Contains(b, []byte(`"keep"`)) {
+		t.Fatal("unknown keys must be kept")
+	}
+}

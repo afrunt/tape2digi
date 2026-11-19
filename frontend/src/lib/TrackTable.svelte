@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SetTrackDetails } from '../../wailsjs/go/main/App'
+  import { NameTracks, NumberTracks, SetTrackDetails } from '../../wailsjs/go/main/App'
   import { t } from './i18n.svelte'
   import { errText, formatClock, ui } from './store.svelte'
 
@@ -28,6 +28,9 @@
   const projectArtist = $derived(ui.project?.artist ?? '')
   const readOnly = $derived(ui.status.state === 'recording' || ui.status.state === 'paused' || ui.status.importSide !== '' || !!ui.job)
   let error = $state('')
+  let naming = $state(false)
+  let listText = $state('')
+  let note = $state('')
 
   const num = (i: number) => String(offset + i + 1).padStart(2, '0')
 
@@ -39,6 +42,30 @@
     try {
       ui.project = await SetTrackDetails(side, tr.startMs, next.title, next.artist, next.albumArtist)
       error = ''
+    } catch (e) {
+      error = errText(e)
+    }
+  }
+
+  async function applyList() {
+    try {
+      const r = await NameTracks(side, listText)
+      ui.project = r.project
+      error = ''
+      naming = false
+      listText = ''
+      note = r.extra > 0 ? t('tracks.nameExtra', { used: r.used, extra: r.extra }) : ''
+    } catch (e) {
+      error = errText(e)
+    }
+  }
+
+  async function numberEmpty() {
+    try {
+      ui.project = await NumberTracks(side, t('tracks.numberPattern'))
+      error = ''
+      naming = false
+      note = ''
     } catch (e) {
       error = errText(e)
     }
@@ -97,7 +124,38 @@
         {/each}
       </tbody>
     </table>
-    <p class="muted small total">{t('tracks.total', { count: tracks.length, time: formatClock(total) })}</p>
+    <div class="row total">
+      <p class="muted small">{t('tracks.total', { count: tracks.length, time: formatClock(total) })}</p>
+      <span class="grow"></span>
+      {#if !naming}
+        <button disabled={readOnly} onclick={() => ((naming = true), (note = ''))} title={t('tracks.nameHint')}>{t('tracks.name')}</button>
+      {/if}
+    </div>
+    {#if naming}
+      <div class="naming" role="group" aria-label={t('tracks.name')}>
+        <label for="names-{side}" class="small muted">{t('tracks.nameListLabel')}</label>
+        <textarea
+          id="names-{side}"
+          rows="6"
+          bind:value={listText}
+          disabled={readOnly}
+          placeholder={t('tracks.nameListPlaceholder')}
+          onkeydown={(e) => {
+            if (e.key === 'Escape') {
+              naming = false
+              e.stopPropagation()
+            }
+          }}
+        ></textarea>
+        <div class="row">
+          <button class="primary" disabled={readOnly || !listText.trim()} onclick={applyList}>{t('tracks.nameApply')}</button>
+          <button disabled={readOnly} onclick={numberEmpty} title={t('tracks.numberHint')}>{t('tracks.numberEmpty')}</button>
+          <span class="grow"></span>
+          <button onclick={() => (naming = false)}>{t('cancel')}</button>
+        </div>
+      </div>
+    {/if}
+    {#if note}<p class="muted small">{note}</p>{/if}
     {#if error}<p class="error small" role="alert">{error}</p>{/if}
   </div>
 {/if}
@@ -146,5 +204,22 @@
   }
   .total {
     margin: 8px 0 0;
+  }
+  .total p {
+    margin: 0;
+  }
+  .grow {
+    flex: 1;
+  }
+  .naming {
+    display: grid;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .naming textarea {
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font: inherit;
   }
 </style>

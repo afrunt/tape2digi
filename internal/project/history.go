@@ -25,6 +25,9 @@ const DetailsKey = "project"
 // Compilation flag.
 type step struct {
 	audio bool
+	// Deletion step: the side is marked deleted; a staged side's audio and
+	// record move into stored and side.
+	remove bool
 	// Compilation step: the flag before and after.
 	details               bool
 	compBefore, compAfter bool
@@ -141,6 +144,9 @@ func (p *Project) ApplyEdit(key, tmp string) error {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.deleted[key] {
+		return i18n.New("project.sideHasNoAudio", key)
+	}
 	h := p.historyLocked(key)
 	_, had := p.staged[key]
 	st := step{audio: true, hadStaged: had}
@@ -186,6 +192,8 @@ func (p *Project) Undo(key string) (audio bool, err error) {
 	switch {
 	case s.details:
 		p.restoreCompilationLocked(s.compBefore)
+	case s.remove:
+		err = p.restoreSideLocked(key, s)
 	case s.audio:
 		err = p.swapAudioLocked(key, h, s, true)
 	default:
@@ -196,7 +204,7 @@ func (p *Project) Undo(key string) (audio bool, err error) {
 	}
 	h.pos--
 	p.touchLocked(h)
-	return s.audio, nil
+	return s.audio || s.remove, nil
 }
 
 // Redo applies the change that was last undone.
@@ -214,6 +222,8 @@ func (p *Project) Redo(key string) (audio bool, err error) {
 	switch {
 	case s.details:
 		p.restoreCompilationLocked(s.compAfter)
+	case s.remove:
+		err = p.removeSideLocked(key, h, s)
 	case s.audio:
 		err = p.swapAudioLocked(key, h, s, false)
 	default:
@@ -224,7 +234,7 @@ func (p *Project) Redo(key string) (audio bool, err error) {
 	}
 	h.pos++
 	p.touchLocked(h)
-	return s.audio, nil
+	return s.audio || s.remove, nil
 }
 
 // restoreCompilationLocked sets only the Compilation flag on top of the
@@ -316,4 +326,69 @@ func (p *Project) LastHistory() LastHistory {
 		}
 	}
 	return out
+}
+
+// DeleteSide marks the side as deleted until Save, which removes its file and
+// descriptor entry. It is one undoable step; Discard cancels it.
+func (p *Project) DeleteSide(key string) error {
+	if !ValidSide(key) {
+		return i18n.New("project.unknownSide", key)
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, ok := p.sideLocked(key); !ok {
+		return i18n.New("project.sideHasNoAudio", key)
+	}
+	h := p.historyLocked(key)
+	st := step{remove: true}
+	if err := p.removeSideLocked(key, h, &st); err != nil {
+		return err
+	}
+	p.pushLocked(key, st)
+	return nil
+}
+
+// removeSideLocked marks the side deleted; a staged side's audio moves to a
+// version file so undo can bring it back.
+func (p *Project) removeSideLocked(key string, h *sideHistory, s *step) error {
+	if side, ok := p.staged[key]; ok {
+		live, err := p.stagedPath(key)
+		if err != nil {
+			return err
+		}
+		stored, err := p.versionPathLocked(key, h)
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(live, stored); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		s.hadStaged, s.side, s.stored = true, side, stored
+		delete(p.staged, key)
+	}
+	if p.deleted == nil {
+		p.deleted = map[string]bool{}
+	}
+	p.deleted[key] = true
+	return nil
+}
+
+// restoreSideLocked undoes a deletion, putting a staged side's audio back.
+func (p *Project) restoreSideLocked(key string, s *step) error {
+	if s.hadStaged {
+		live, err := p.stagedPath(key)
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(s.stored, live); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if p.staged == nil {
+			p.staged = map[string]Side{}
+		}
+		p.staged[key] = s.side
+		s.stored = ""
+	}
+	delete(p.deleted, key)
+	return nil
 }

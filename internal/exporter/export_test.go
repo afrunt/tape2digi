@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -18,6 +19,7 @@ import (
 	"github.com/bogem/id3v2/v2"
 	"github.com/hajimehoshi/go-mp3"
 	"github.com/mewkiz/flac"
+	"github.com/mewkiz/flac/meta"
 
 	"github.com/afrunt/tape2digi/internal/project"
 	"github.com/afrunt/tape2digi/internal/wav"
@@ -349,5 +351,89 @@ func TestExportOriginalCopiesStoredSides(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(dir, "side-a-recording.wav")); err == nil {
 		t.Fatal("off must not copy the original")
+	}
+}
+
+func TestReplayGainTagsAreWritten(t *testing.T) {
+	f := wav.Format{SampleRate: 44100, Channels: 2, BitDepth: 16}
+	in := Input{Name: "Tape", Artist: "Band", Sides: []Side{sineSide(t, "A", f, 3, mk(500, 2500, "Song"))}}
+	txxx := func(path string) map[string]string {
+		tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tag.Close()
+		out := map[string]string{}
+		for _, fr := range tag.GetFrames("TXXX") {
+			u := fr.(id3v2.UserDefinedTextFrame)
+			out[u.Description] = u.Value
+		}
+		return out
+	}
+	// A stereo 440 Hz sine at 12000/32768 peak (-8.7 dBFS) measures about -9.4 LUFS.
+	files := run(t, in, Options{Format: FormatMP3, Bitrate: 192, ReplayGain: true})
+	got := txxx(files[0])
+	var gain float64
+	if _, err := fmt.Sscanf(got["REPLAYGAIN_TRACK_GAIN"], "%f dB", &gain); err != nil || gain > -8 || gain < -9.2 {
+		t.Fatalf("track gain %q", got["REPLAYGAIN_TRACK_GAIN"])
+	}
+	if !strings.HasPrefix(got["REPLAYGAIN_TRACK_PEAK"], "0.366") || got["REPLAYGAIN_ALBUM_GAIN"] != got["REPLAYGAIN_TRACK_GAIN"] || got["REPLAYGAIN_ALBUM_PEAK"] == "" {
+		t.Fatalf("tags %v", got)
+	}
+	if files = run(t, in, Options{Format: FormatWAV}); len(txxx(files[0])) != 0 {
+		t.Fatal("ReplayGain off must write no tags")
+	}
+
+	in.Sides = append(in.Sides, sineSide(t, "B", f, 2, mk(0, 1000, "Two")))
+	files = run(t, in, Options{Format: FormatFLACCue, ReplayGain: true})
+	st, err := flac.ParseFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	comments := map[string]string{}
+	for _, b := range st.Blocks {
+		if vc, ok := b.Body.(*meta.VorbisComment); ok {
+			for _, kv := range vc.Tags {
+				comments[kv[0]] = kv[1]
+			}
+		}
+	}
+	if comments["REPLAYGAIN_ALBUM_GAIN"] == "" || !strings.HasPrefix(comments["REPLAYGAIN_ALBUM_PEAK"], "0.366") {
+		t.Fatalf("vorbis comments %v", comments)
+	}
+	cue, _ := os.ReadFile(files[1])
+	if c := string(cue); strings.Count(c, "    REM REPLAYGAIN_TRACK_GAIN ") != 2 || !strings.Contains(c, "REM REPLAYGAIN_ALBUM_GAIN "+comments["REPLAYGAIN_ALBUM_GAIN"]+"\n") {
+		t.Fatalf("cue:\n%s", cue)
+	}
+}
+
+func TestNameTemplate(t *testing.T) {
+	f := wav.Format{SampleRate: 8000, Channels: 1, BitDepth: 16}
+	a := sineSide(t, "A", f, 4, append(mk(0, 1000, "Song: One"), mk(2000, 3000, "")...))
+	b := sineSide(t, "B", f, 2, mk(0, 1000, "Song: One"))
+	b.Markers[0].Artist = "Guest/Band"
+	in := Input{Name: "Tape", Album: "Live", Year: "1987", Sides: []Side{a, b}}
+	for _, c := range []struct {
+		tmpl string
+		want []string
+	}{
+		{"", []string{"01 - Song_ One.wav", "Track 02.wav", "03 - Song_ One.wav"}},
+		{"{side}{n} {artist} - {title} ({year}, {album})", []string{"A01 Song_ One (1987, Live).wav", "Track 02.wav", "B03 Guest_Band - Song_ One (1987, Live).wav"}},
+		{"{title}", []string{"Song_ One.wav", "Track 02.wav", "Song_ One (2).wav"}},
+		{"bad/{title}", []string{"01 - Song_ One.wav", "Track 02.wav", "03 - Song_ One.wav"}},
+	} {
+		got := in.FilesFor(Options{Format: FormatWAV, NameTemplate: c.tmpl})
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%q: %v, want %v", c.tmpl, got, c.want)
+		}
+	}
+	for tmpl, ok := range map[string]bool{"{n} - {title}": true, "{n}.{side}": true, "  ": false, "a/{title}": false, `a\b`: false, "{n}:{title}": false, "{track}": false, "{title": false} {
+		if err := CheckTemplate(tmpl); (err == nil) != ok {
+			t.Errorf("CheckTemplate(%q) = %v", tmpl, err)
+		}
+	}
+	if _, err := Run(context.Background(), in, Options{Format: FormatWAV, Dir: t.TempDir(), NameTemplate: "{nope}"}, nil); err == nil {
+		t.Fatal("an invalid template must stop the export")
 	}
 }

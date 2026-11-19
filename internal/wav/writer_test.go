@@ -103,3 +103,35 @@ func TestInvalidFormat(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestTruncateShrinksFileAndHeader(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "t.wav")
+	f, _ := os.Create(path)
+	defer f.Close()
+	w, _ := NewWriter(f, Format{SampleRate: 1000, Channels: 2, BitDepth: 16})
+	if _, err := w.Write(pcm(1000, 2, 2)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Truncate(1001); err != nil {
+		t.Fatal(err)
+	}
+	if w.DataBytes() != 1000 {
+		t.Fatalf("data %d, want 1000 (whole frames)", w.DataBytes())
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(path)
+	if fi.Size() != 44+1000 {
+		t.Fatalf("file size %d", fi.Size())
+	}
+	format, data, err := Inspect(f, fi.Size())
+	if err != nil || data != 1000 || format.Channels != 2 {
+		t.Fatalf("inspect %v %d %v", format, data, err)
+	}
+	hdr := make([]byte, 44)
+	_, _ = f.ReadAt(hdr, 0)
+	if binary.LittleEndian.Uint32(hdr[40:]) != 1000 {
+		t.Fatal("header data size not patched")
+	}
+}

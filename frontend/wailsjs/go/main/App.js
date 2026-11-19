@@ -50,6 +50,14 @@ export function CurrentProject() {
   return window['go']['main']['App']['CurrentProject']();
 }
 
+export function DeleteExportPreset(arg1) {
+  return window['go']['main']['App']['DeleteExportPreset'](arg1);
+}
+
+export function DeleteSide(arg1) {
+  return window['go']['main']['App']['DeleteSide'](arg1);
+}
+
 export function DenoiseSide(arg1) {
   return window['go']['main']['App']['DenoiseSide'](arg1);
 }
@@ -74,8 +82,12 @@ export function EditHistoryLast() {
   return window['go']['main']['App']['EditHistoryLast']();
 }
 
-export function ExportConflicts(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ExportConflicts'](arg1, arg2, arg3);
+export function ExportConflicts(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ExportConflicts'](arg1, arg2, arg3, arg4);
+}
+
+export function ExportNameExample(arg1, arg2) {
+  return window['go']['main']['App']['ExportNameExample'](arg1, arg2);
 }
 
 export function ExportPlan() {
@@ -84,6 +96,10 @@ export function ExportPlan() {
 
 export function ExportPrefs() {
   return window['go']['main']['App']['ExportPrefs']();
+}
+
+export function ExportPresets() {
+  return window['go']['main']['App']['ExportPresets']();
 }
 
 export function ExportTracks(arg1) {
@@ -102,6 +118,18 @@ export function ImportSide(arg1, arg2, arg3) {
   return window['go']['main']['App']['ImportSide'](arg1, arg2, arg3);
 }
 
+export function LookupApply(arg1, arg2, arg3) {
+  return window['go']['main']['App']['LookupApply'](arg1, arg2, arg3);
+}
+
+export function LookupRelease(arg1, arg2) {
+  return window['go']['main']['App']['LookupRelease'](arg1, arg2);
+}
+
+export function LookupSearch(arg1, arg2) {
+  return window['go']['main']['App']['LookupSearch'](arg1, arg2);
+}
+
 export function MarkerOptions(arg1, arg2) {
   return window['go']['main']['App']['MarkerOptions'](arg1, arg2);
 }
@@ -112,6 +140,18 @@ export function MarkerRange(arg1, arg2) {
 
 export function MoveMarker(arg1, arg2, arg3) {
   return window['go']['main']['App']['MoveMarker'](arg1, arg2, arg3);
+}
+
+export function NameTracks(arg1, arg2) {
+  return window['go']['main']['App']['NameTracks'](arg1, arg2);
+}
+
+export function NormalizeSide(arg1, arg2) {
+  return window['go']['main']['App']['NormalizeSide'](arg1, arg2);
+}
+
+export function NumberTracks(arg1, arg2) {
+  return window['go']['main']['App']['NumberTracks'](arg1, arg2);
 }
 
 export function OpenInput(arg1, arg2, arg3, arg4) {
@@ -166,6 +206,10 @@ export function RenameProject(arg1) {
   return window['go']['main']['App']['RenameProject'](arg1);
 }
 
+export function RepairSide(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['RepairSide'](arg1, arg2, arg3, arg4);
+}
+
 export function ResetMarkers(arg1) {
   return window['go']['main']['App']['ResetMarkers'](arg1);
 }
@@ -190,6 +234,10 @@ export function SaveEditorWindow(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['SaveEditorWindow'](arg1, arg2, arg3, arg4);
 }
 
+export function SaveExportPreset(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SaveExportPreset'](arg1, arg2, arg3);
+}
+
 export function SaveProject() {
   return window['go']['main']['App']['SaveProject']();
 }
@@ -200,6 +248,10 @@ export function SaveProjectAs(arg1, arg2) {
 
 export function SeekSide(arg1) {
   return window['go']['main']['App']['SeekSide'](arg1);
+}
+
+export function SetAutoStop(arg1, arg2) {
+  return window['go']['main']['App']['SetAutoStop'](arg1, arg2);
 }
 
 export function SetCover(arg1) {
@@ -222,6 +274,10 @@ export function SetMonitorDevice(arg1) {
   return window['go']['main']['App']['SetMonitorDevice'](arg1);
 }
 
+export function SetOnlineLookup(arg1) {
+  return window['go']['main']['App']['SetOnlineLookup'](arg1);
+}
+
 export function SetProjectDetails(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['SetProjectDetails'](arg1, arg2, arg3, arg4, arg5);
 }
@@ -234,8 +290,20 @@ export function SetTrackDetails(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['SetTrackDetails'](arg1, arg2, arg3, arg4, arg5);
 }
 
+export function SetTracksReady(arg1) {
+  return window['go']['main']['App']['SetTracksReady'](arg1);
+}
+
+export function SideClips(arg1) {
+  return window['go']['main']['App']['SideClips'](arg1);
+}
+
 export function SideGainInfo(arg1) {
   return window['go']['main']['App']['SideGainInfo'](arg1);
+}
+
+export function SideLoudnessInfo(arg1, arg2) {
+  return window['go']['main']['App']['SideLoudnessInfo'](arg1, arg2);
 }
 
 export function SideNoisePlan(arg1) {
@@ -244,6 +312,14 @@ export function SideNoisePlan(arg1) {
 
 export function SidePlaybackState() {
   return window['go']['main']['App']['SidePlaybackState']();
+}
+
+export function SideRepairPlan(arg1) {
+  return window['go']['main']['App']['SideRepairPlan'](arg1);
+}
+
+export function SideSpectrogram(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SideSpectrogram'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SideSplitPlan(arg1) {

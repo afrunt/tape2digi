@@ -42,6 +42,9 @@ type Status struct {
 	Side      string `json:"side"`
 	// ImportSide is the side being imported, empty when no import runs.
 	ImportSide string `json:"importSide"`
+	// AutoStoppedSide is the side whose last take was stopped automatically
+	// after end-of-tape silence; cleared when the next take starts.
+	AutoStoppedSide string `json:"autoStoppedSide"`
 }
 
 // SideExistsError is returned when a side already has audio and the caller did
@@ -59,6 +62,9 @@ type Handlers struct {
 	OnLevel func([]audio.ChannelLevel)
 	OnState func(Status)
 	OnError func(string)
+	// OnStopped is called after the recorder ended a take by itself (size
+	// limit or auto-stop), so the caller can refresh the project.
+	OnStopped func()
 }
 
 // Service is safe for concurrent use.
@@ -93,11 +99,24 @@ type Service struct {
 	startedAt time.Time
 	// maxData lowers the WAV size cap in tests.
 	maxData uint64
+
+	autoStop    bool
+	autoStopMs  int64
+	watch       *silenceWatch
+	autoStopped string
 }
 
 // New creates an idle service.
 func New(src audio.Source, h Handlers) *Service {
-	return &Service{src: src, h: h, state: StateIdle, now: time.Now, LevelInterval: time.Second / 30}
+	return &Service{src: src, h: h, state: StateIdle, now: time.Now, LevelInterval: time.Second / 30, autoStop: true, autoStopMs: 60_000}
+}
+
+// SetAutoStop sets whether a take stops by itself after the given length of
+// end-of-tape silence; it also applies to a running take.
+func (s *Service) SetAutoStop(on bool, after time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.autoStop, s.autoStopMs = on, after.Milliseconds()
 }
 
 // Devices lists capture devices.
@@ -338,6 +357,7 @@ func (s *Service) Start(side string, overwrite bool) error {
 		return err
 	}
 	s.file, s.writer, s.recPath, s.recSide, s.startedAt = f, w, path, side, s.now().UTC()
+	s.watch, s.autoStopped = newSilenceWatch(s.format), ""
 	s.state = StateRecording
 	go s.notifyState()
 	return nil
@@ -351,6 +371,7 @@ func (s *Service) Pause() error {
 		return i18n.New("recorder.noRecordingIsInProgress")
 	}
 	s.state = StatePaused
+	s.watch.reset(s.writer.DataBytes())
 	go s.notifyState()
 	return nil
 }
@@ -363,6 +384,7 @@ func (s *Service) Resume() error {
 		return i18n.New("recorder.theRecordingIsNotPaused")
 	}
 	s.state = StateRecording
+	s.watch.reset(s.writer.DataBytes())
 	go s.notifyState()
 	return nil
 }
@@ -556,7 +578,7 @@ func (s *Service) Status() Status {
 }
 
 func (s *Service) statusLocked() Status {
-	st := Status{State: s.state, Channels: s.format.Channels, File: filepath.Base(s.recPath), Side: s.recSide, ImportSide: s.impSide}
+	st := Status{State: s.state, Channels: s.format.Channels, File: filepath.Base(s.recPath), Side: s.recSide, ImportSide: s.impSide, AutoStoppedSide: s.autoStopped}
 	if s.recPath == "" {
 		st.File = ""
 	}
@@ -616,9 +638,31 @@ func (s *Service) write(chunk []byte) {
 		s.mu.Unlock()
 		return
 	}
+	off := s.writer.DataBytes()
 	_, err := s.writer.Write(chunk)
 	if err == nil {
+		keep := uint64(0)
+		if s.autoStop && s.watch != nil {
+			keep = s.watch.feed(chunk, off, s.autoStopMs)
+		}
+		if keep == 0 {
+			s.mu.Unlock()
+			return
+		}
+		side := s.recSide
+		err = s.writer.Truncate(keep)
+		_, stopErr := s.stopLocked()
+		if err == nil {
+			s.autoStopped = side
+		}
 		s.mu.Unlock()
+		if err != nil {
+			s.notifyError(i18n.T("recorder.writeFailed", err))
+		} else if stopErr != nil && !errors.Is(stopErr, ErrEmptyTake) {
+			s.notifyError(stopErr.Error())
+		}
+		s.notifyState()
+		s.notifyStopped()
 		return
 	}
 	_, stopErr := s.stopLocked()
@@ -632,6 +676,7 @@ func (s *Service) write(chunk []byte) {
 	}
 	s.notifyError(msg)
 	s.notifyState()
+	s.notifyStopped()
 }
 
 // inputLost handles the capture device disappearing.
@@ -660,6 +705,12 @@ func (s *Service) inputLost(q *audio.Queue) {
 func (s *Service) notifyState() {
 	if s.h.OnState != nil {
 		s.h.OnState(s.Status())
+	}
+}
+
+func (s *Service) notifyStopped() {
+	if s.h.OnStopped != nil {
+		s.h.OnStopped()
 	}
 }
 
