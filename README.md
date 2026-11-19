@@ -4,6 +4,8 @@
 
 English (US) · [Українська](#tape2digi-українська)
 
+![tape2digi main window](docs/screenshot.png)
+
 ## Introduction
 
 tape2digi is a free desktop app that turns audio cassettes into tidy digital albums. Pick an input (line-in, a microphone, or any capture device on your computer), watch the live left/right levels, record each side of the tape, mark where the tracks start and end, and export ready-to-play WAV, MP3 or FLAC files with titles, artists and cover art.
@@ -172,6 +174,8 @@ Record results per OS/arch in the pull request or release notes; none of the har
 **Оцифровуйте аудіокасети кількома кліками.**
 
 [English (US)](#tape2digi) · Українська
+
+![Головне вікно tape2digi](docs/screenshot.png)
 
 ## Вступ
 
