@@ -374,7 +374,7 @@ func stageTake(t *testing.T, p *Project, key, content string) {
 	if err := os.WriteFile(part, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.StageSide(key, part, Side{Origin: OriginRecorded}); err != nil {
+	if err := p.StageSide(key, part, Side{Origin: OriginRecorded, DurationMs: 10000}); err != nil {
 		t.Fatal(err)
 	}
 }

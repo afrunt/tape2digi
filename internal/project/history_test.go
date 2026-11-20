@@ -244,3 +244,87 @@ func TestDiscardCancelsDeletion(t *testing.T) {
 		t.Fatal("Discard must bring the side back")
 	}
 }
+
+func readSide(t *testing.T, p *Project, key string) string {
+	t.Helper()
+	path, err := p.AudioPath(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	return string(b)
+}
+
+func TestReplacingStagedSideIsUndoable(t *testing.T) {
+	p, err := Create(t.TempDir(), "R")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageTake(t, p, "A", "old")
+	_ = p.AddMarker("A", MarkerStart, 1000)
+	_ = p.AddMarker("A", MarkerEnd, 2000)
+	_ = p.SetListing("A", []ListingTrack{{Title: "One"}})
+	stageTake(t, p, "A", "new")
+	if readSide(t, p, "A") != "new" || len(markers(p)) != 0 || !p.History("A").CanUndo {
+		t.Fatalf("replacement: %q %v", readSide(t, p, "A"), markers(p))
+	}
+	_ = p.SetListing("A", []ListingTrack{{Title: "Fresh"}})
+	if a, err := p.Undo("A"); err != nil || !a {
+		t.Fatalf("undo replacement: %v %v", a, err)
+	}
+	if readSide(t, p, "A") != "old" || len(markers(p)) != 2 || p.Listing("A")[0].Title != "One" {
+		t.Fatalf("undo must restore the old take: %q %v %v", readSide(t, p, "A"), markers(p), p.Listing("A"))
+	}
+	if p.HasPart("A") {
+		t.Fatal("undo must not leave a leftover")
+	}
+	if _, err := p.Redo("A"); err != nil || readSide(t, p, "A") != "new" || len(markers(p)) != 0 || p.Listing("A")[0].Title != "Fresh" {
+		t.Fatalf("redo: %q %v %v %v", readSide(t, p, "A"), markers(p), p.Listing("A"), err)
+	}
+	if _, err := p.Undo("A"); err != nil || readSide(t, p, "A") != "old" {
+		t.Fatal("second undo of the replacement")
+	}
+	if _, err := p.Undo("A"); err != nil || len(markers(p)) != 1 {
+		t.Fatalf("the earlier marker step: %v %v", markers(p), err)
+	}
+}
+
+func TestReplacingSavedSideUndoAndSave(t *testing.T) {
+	p := newSavedSide(t)
+	stageTake(t, p, "A", "new")
+	if _, err := p.Undo("A"); err != nil {
+		t.Fatal(err)
+	}
+	if p.Info().Sides["A"].Staged || p.HasPart("A") || readSide(t, p, "A") != "x" || p.Dirty() {
+		t.Fatalf("undo must bring back the saved side: %q", readSide(t, p, "A"))
+	}
+	if _, err := p.Redo("A"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(p.Dir(), "side-A.wav")); string(b) != "new" {
+		t.Fatalf("Save must write the redone take, got %q", b)
+	}
+}
+
+func TestReplacingDeletedSideUndoKeepsDeletion(t *testing.T) {
+	p := newSavedSide(t)
+	if err := p.DeleteSide("A"); err != nil {
+		t.Fatal(err)
+	}
+	stageTake(t, p, "A", "new")
+	if readSide(t, p, "A") != "new" {
+		t.Fatal("the new take replaces the deleted side")
+	}
+	if _, err := p.Undo("A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.AudioPath("A"); err == nil || p.HasPart("A") {
+		t.Fatal("undo must bring back the deletion")
+	}
+	if _, err := p.Undo("A"); err != nil || readSide(t, p, "A") != "x" {
+		t.Fatal("the deletion itself stays undoable")
+	}
+}

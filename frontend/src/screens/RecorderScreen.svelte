@@ -138,7 +138,7 @@
 
   let poll: ReturnType<typeof setInterval> | undefined
 
-  const onNew = () => void close()
+  const onNew = () => void close(true)
   const onOpen = () => void openOther()
   hooks.newProject = onNew
   hooks.openProject = onOpen
@@ -515,12 +515,13 @@
   let flow = false
   const dialogOpen = () => !!(ui.ask || ui.saveAsOpen || ui.exportOpen || ui.lookupOpen || ui.quit || ui.edit)
 
-  async function close() {
+  async function close(create = false) {
     if (flow || dialogOpen()) return
     flow = true
     try {
       if (!(await leave())) return
       await CloseProject()
+      ui.startCreating = create
       ui.project = null
       ui.error = ''
     } catch (e) {
@@ -565,7 +566,8 @@
     <strong>{ui.project?.name}</strong>
     <span class="muted path">{ui.project?.dir}</span>
   </div>
-  <button onclick={close}>{t('newProject')}</button>
+  <button onclick={() => close()}>{t('home')}</button>
+  <button onclick={() => close(true)}>{t('newProject')}</button>
   <button onclick={openOther}>{t('openProject')}</button>
   <button onclick={save} disabled={!ui.project?.dirty || !!nameError || !!detailsError || yearInvalid || albumInvalid || genreInvalid}>{t('save')}</button>
   <button onclick={() => (ui.saveAsOpen = true)} disabled={busy}>{t('saveAs')}</button>

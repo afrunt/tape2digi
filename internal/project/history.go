@@ -39,6 +39,21 @@ type step struct {
 	hadStaged bool
 	side      Side
 	stored    string
+	// Replacement step: a new take staged over a side that had a recording.
+	// other is the side's state that is not live right now.
+	replace bool
+	other   *sideState
+}
+
+// sideState is everything a replacement takes away from a side: its staged
+// audio and record, its draft markers and listing, and its deleted flag.
+type sideState struct {
+	staged  bool
+	side    Side
+	stored  string // version file with the staged audio, "" when there is none
+	markers *[]Marker
+	listing *[]ListingTrack
+	deleted bool
 }
 
 type sideHistory struct {
@@ -93,6 +108,9 @@ func (p *Project) pushLocked(key string, s step) {
 func removeStored(s step) {
 	if s.stored != "" {
 		_ = os.Remove(s.stored)
+	}
+	if s.other != nil && s.other.stored != "" {
+		_ = os.Remove(s.other.stored)
 	}
 }
 
@@ -194,6 +212,8 @@ func (p *Project) Undo(key string) (audio bool, err error) {
 		p.restoreCompilationLocked(s.compBefore)
 	case s.remove:
 		err = p.restoreSideLocked(key, s)
+	case s.replace:
+		err = p.swapStateLocked(key, h, s)
 	case s.audio:
 		err = p.swapAudioLocked(key, h, s, true)
 	default:
@@ -204,7 +224,7 @@ func (p *Project) Undo(key string) (audio bool, err error) {
 	}
 	h.pos--
 	p.touchLocked(h)
-	return s.audio || s.remove, nil
+	return s.audio || s.remove || s.replace, nil
 }
 
 // Redo applies the change that was last undone.
@@ -224,6 +244,8 @@ func (p *Project) Redo(key string) (audio bool, err error) {
 		p.restoreCompilationLocked(s.compAfter)
 	case s.remove:
 		err = p.removeSideLocked(key, h, s)
+	case s.replace:
+		err = p.swapStateLocked(key, h, s)
 	case s.audio:
 		err = p.swapAudioLocked(key, h, s, false)
 	default:
@@ -234,7 +256,7 @@ func (p *Project) Redo(key string) (audio bool, err error) {
 	}
 	h.pos++
 	p.touchLocked(h)
-	return s.audio || s.remove, nil
+	return s.audio || s.remove || s.replace, nil
 }
 
 // restoreCompilationLocked sets only the Compilation flag on top of the
@@ -391,4 +413,108 @@ func (p *Project) restoreSideLocked(key string, s *step) error {
 	}
 	delete(p.deleted, key)
 	return nil
+}
+
+// captureStateLocked moves the side's staged audio, if any, to a version file
+// and returns the side's state; the in-memory maps are left as they are.
+// A staged file that is already missing is recorded as having no audio.
+func (p *Project) captureStateLocked(key string, h *sideHistory) (sideState, error) {
+	st := sideState{deleted: p.deleted[key]}
+	if d, ok := p.draftMarkers[key]; ok {
+		st.markers = copyMarkers(d)
+	}
+	if d, ok := p.draftListing[key]; ok {
+		c := append([]ListingTrack(nil), d...)
+		if d == nil {
+			c = nil
+		}
+		st.listing = &c
+	}
+	side, ok := p.staged[key]
+	if !ok {
+		return st, nil
+	}
+	st.staged, st.side = true, side
+	live, err := p.stagedPath(key)
+	if err != nil {
+		return st, err
+	}
+	stored, err := p.versionPathLocked(key, h)
+	if err != nil {
+		return st, err
+	}
+	if err := os.Rename(live, stored); err != nil {
+		if !os.IsNotExist(err) {
+			return st, err
+		}
+		stored = ""
+	}
+	st.stored = stored
+	return st, nil
+}
+
+// applyStateLocked makes st the side's live state, moving its stored audio
+// back to the staged path.
+func (p *Project) applyStateLocked(key string, st sideState) error {
+	if st.staged && st.stored != "" {
+		live, err := p.stagedPath(key)
+		if err != nil {
+			return err
+		}
+		if err := os.Rename(st.stored, live); err != nil {
+			return err
+		}
+	}
+	if st.staged {
+		if p.staged == nil {
+			p.staged = map[string]Side{}
+		}
+		p.staged[key] = st.side
+	} else {
+		delete(p.staged, key)
+	}
+	p.restoreDraftLocked(key, st.markers)
+	if st.listing == nil {
+		delete(p.draftListing, key)
+	} else {
+		if p.draftListing == nil {
+			p.draftListing = map[string][]ListingTrack{}
+		}
+		p.draftListing[key] = append([]ListingTrack(nil), *st.listing...)
+	}
+	if st.deleted {
+		if p.deleted == nil {
+			p.deleted = map[string]bool{}
+		}
+		p.deleted[key] = true
+	} else {
+		delete(p.deleted, key)
+	}
+	return nil
+}
+
+// swapStateLocked exchanges the side's live state with the one kept in a
+// replacement step, so undo and redo each bring back exactly what the other
+// took away, including edits made after the replacement.
+func (p *Project) swapStateLocked(key string, h *sideHistory, s *step) error {
+	cur, err := p.captureStateLocked(key, h)
+	if err != nil {
+		return err
+	}
+	if err := p.applyStateLocked(key, *s.other); err != nil {
+		p.putBackLocked(key, cur)
+		return err
+	}
+	s.other = &cur
+	return nil
+}
+
+// putBackLocked returns captured staged audio to its place after a failure.
+func (p *Project) putBackLocked(key string, st sideState) {
+	if st.stored == "" {
+		return
+	}
+	if live, err := p.stagedPath(key); err == nil {
+		_ = os.Rename(st.stored, live)
+	}
 }

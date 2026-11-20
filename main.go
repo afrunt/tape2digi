@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 
 	"github.com/afrunt/tape2digi/internal/appdata"
@@ -16,6 +17,11 @@ import (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+// The window icon on Linux; macOS and Windows take it from the app bundle.
+//
+//go:embed build/appicon.png
+var icon []byte
 
 // version is set at build time with -ldflags "-X main.version=...".
 var version = "dev"
@@ -44,6 +50,9 @@ func main() {
 		OnBeforeClose:    app.beforeClose,
 		Menu:             app.buildMenu(),
 		Bind:             []interface{}{app},
+		// Setting Linux options replaces Wails' defaults, so the GPU policy it
+		// would otherwise pick is kept explicitly.
+		Linux: &linux.Options{Icon: icon, WebviewGpuPolicy: linux.WebviewGpuPolicyNever},
 	}
 	if goruntime.GOOS == "windows" {
 		if dir, err := appdata.Default(); err == nil {

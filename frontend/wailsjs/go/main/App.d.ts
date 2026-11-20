@@ -80,11 +80,7 @@ export function MarkerRange(arg1:string,arg2:number):Promise<main.MarkerSpan>;
 
 export function MoveMarker(arg1:string,arg2:number,arg3:number):Promise<project.Info>;
 
-export function NameTracks(arg1:string,arg2:string):Promise<main.NamedTracks>;
-
 export function NormalizeSide(arg1:string,arg2:number):Promise<project.Info>;
-
-export function NumberTracks(arg1:string,arg2:string):Promise<project.Info>;
 
 export function OpenInput(arg1:string,arg2:number,arg3:number,arg4:number):Promise<audio.Device>;
 

@@ -516,13 +516,19 @@ func (p *Project) Leftovers() []Leftover {
 }
 
 // StageSide moves a finished temporary take into the staging folder as the
-// side's pending audio, replacing any earlier pending take. The project's own
-// side file and descriptor stay as they are until Save.
+// side's pending audio. The project's own side file and descriptor stay as
+// they are until Save. When the side already had a recording the change is one
+// undoable step that brings back the previous audio, markers and listing.
 func (p *Project) StageSide(key, part string, s Side) error {
 	dst, err := p.stagedPath(key)
 	if err != nil {
 		return err
 	}
+	sidePath, err := p.SidePath(key)
+	if err != nil {
+		return err
+	}
+	_, statErr := os.Stat(sidePath)
 	s.File = SideFileName(key)
 	s.Missing = false
 	s.Staged = true
@@ -532,19 +538,36 @@ func (p *Project) StageSide(key, part string, s Side) error {
 	if s.Listing == nil {
 		s.Listing = p.effectiveListingLocked(key)
 	}
-	delete(p.draftMarkers, key)
-	delete(p.draftListing, key)
-	delete(p.deleted, key)
-	p.clearHistoryLocked(key)
+	_, saved := p.sides[key]
+	_, staged := p.staged[key]
+	replacing := (saved || staged || p.deleted[key] || statErr == nil) && part != dst
+	var prev sideState
+	h := p.historyLocked(key)
+	if replacing {
+		if prev, err = p.captureStateLocked(key, h); err != nil {
+			return err
+		}
+	} else {
+		p.clearHistoryLocked(key)
+	}
 	if part != dst {
 		if err := os.Rename(part, dst); err != nil {
+			if replacing {
+				p.putBackLocked(key, prev)
+			}
 			return err
 		}
 	}
+	delete(p.draftMarkers, key)
+	delete(p.draftListing, key)
+	delete(p.deleted, key)
 	if p.staged == nil {
 		p.staged = map[string]Side{}
 	}
 	p.staged[key] = s
+	if replacing {
+		p.pushLocked(key, step{replace: true, other: &prev})
+	}
 	return nil
 }
 

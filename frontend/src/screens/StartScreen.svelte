@@ -6,7 +6,8 @@
   import { errText, hooks, ui } from '../lib/store.svelte'
 
   let recents: project.RecentEntry[] = $state([])
-  let creating = $state(false)
+  let creating = $state(ui.startCreating)
+  ui.startCreating = false
   let name = $state('')
   let parent = $state('')
   let error = $state('')
@@ -57,9 +58,14 @@
   const onOpen = () => {
     if (!busy && !ui.ask) void openFolder()
   }
+  const onNew = () => {
+    if (!busy && !ui.ask) creating = true
+  }
   hooks.openProject = onOpen
+  hooks.newProject = onNew
   onDestroy(() => {
     if (hooks.openProject === onOpen) hooks.openProject = null
+    if (hooks.newProject === onNew) hooks.newProject = null
   })
 
   async function remove(path: string) {

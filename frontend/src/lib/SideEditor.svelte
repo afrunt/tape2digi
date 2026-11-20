@@ -361,6 +361,10 @@
     menu = null
     await guard(async () => {
       ui.project = undo ? await UndoSide(side!) : await RedoSide(side!)
+      if (!ui.project?.sides?.[side!]) {
+        await close()
+        return
+      }
       posMs = 0
       await load()
     })

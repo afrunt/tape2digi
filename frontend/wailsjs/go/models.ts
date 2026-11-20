@@ -422,40 +422,6 @@ export namespace main {
 	        this.max = source["max"];
 	    }
 	}
-	export class NamedTracks {
-	    project: project.Info;
-	    used: number;
-	    extra: number;
-	
-	    static createFrom(source: any = {}) {
-	        return new NamedTracks(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.project = this.convertValues(source["project"], project.Info);
-	        this.used = source["used"];
-	        this.extra = source["extra"];
-	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
-	}
 	export class NoisePlan {
 	    available: boolean;
 	    noiseDb: number;

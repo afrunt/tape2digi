@@ -49,6 +49,8 @@ export const ui = $state({
   saveAsOpen: false,
   exportOpen: false,
   lookupOpen: false,
+  // Set when New project leaves the open project: the start screen opens on its create form.
+  startCreating: false,
   // Mirrors settings.onlineLookup.
   onlineLookup: false,
   // Side shown in the editor modal, or null.

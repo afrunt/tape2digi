@@ -142,16 +142,8 @@ export function MoveMarker(arg1, arg2, arg3) {
   return window['go']['main']['App']['MoveMarker'](arg1, arg2, arg3);
 }
 
-export function NameTracks(arg1, arg2) {
-  return window['go']['main']['App']['NameTracks'](arg1, arg2);
-}
-
 export function NormalizeSide(arg1, arg2) {
   return window['go']['main']['App']['NormalizeSide'](arg1, arg2);
-}
-
-export function NumberTracks(arg1, arg2) {
-  return window['go']['main']['App']['NumberTracks'](arg1, arg2);
 }
 
 export function OpenInput(arg1, arg2, arg3, arg4) {
