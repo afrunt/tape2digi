@@ -93,6 +93,48 @@ func TestDetectQuietPassageIsNotAGap(t *testing.T) {
 	}
 }
 
+func TestDetectFadeBetweenSongsIsOneCut(t *testing.T) {
+	env := build(
+		[2]float64{12, -68}, [2]float64{60, -25},
+		[2]float64{10, -39}, // a fade 14 dB below the music, far above the hiss
+		[2]float64{60, -25}, [2]float64{5, -68}, [2]float64{60, -25}, [2]float64{10, -68},
+	)
+	got := Detect(env)
+	if len(got) != 6 {
+		t.Fatalf("got %v, want 3 tracks", got)
+	}
+	if end, start := got[1].PositionMs, got[2].PositionMs; end < 72000 || end > 82000 || start-end > 100 || start <= end {
+		t.Fatalf("fade cut: end %d, start %d", end, start)
+	}
+	for i, want := range map[int]int64{0: 11750, 3: 142250, 4: 146750, 5: 207250} {
+		if got[i].PositionMs != want {
+			t.Fatalf("hiss gap marker %d: got %d want %d", i, got[i].PositionMs, want)
+		}
+	}
+}
+
+func TestDetectSharpDropIntoQuieterSong(t *testing.T) {
+	env := build(
+		[2]float64{12, -68}, [2]float64{60, -22},
+		[2]float64{4, -40}, // the song stops dead, the next one starts quieter
+		[2]float64{60, -32}, [2]float64{10, -68},
+	)
+	if got := tracks(t, env); got != 2 {
+		t.Fatalf("got %d tracks, want 2", got)
+	}
+}
+
+func TestDetectShortQuietBarIsNotACut(t *testing.T) {
+	env := build(
+		[2]float64{12, -68}, [2]float64{60, -25},
+		[2]float64{5.5, -37}, // 12 dB below the music on both sides, too short for a fade
+		[2]float64{60, -25}, [2]float64{10, -68},
+	)
+	if got := tracks(t, env); got != 0 {
+		t.Fatalf("got %d tracks, want no split", got)
+	}
+}
+
 // TestDetectRealRecording runs against a real side when T2D_SPLIT_SAMPLE names a WAV file.
 func TestDetectRealRecording(t *testing.T) {
 	path := os.Getenv("T2D_SPLIT_SAMPLE")

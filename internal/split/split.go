@@ -29,6 +29,22 @@ const (
 
 	digitalSilenceDB = -90 // below this a window is digital silence, not tape hiss
 	floorPermille    = 10  // the floor is this low share of the hiss and music windows
+
+	// Songs may also be separated without a pause to the hiss: a fade dipping
+	// well below the music on both sides, or a sharp drop into a quieter next
+	// song. Levels are compared with the music around each point.
+	smoothMs      = 1000  // the level of a point is the mean over this span around it
+	contextNearMs = 10000 // the music around a point starts this far from it
+	contextFarMs  = 30000 // and ends this far from it
+	contextMinMs  = 10000 // shorter music context gives no boundary
+	contextStep   = 5     // windows that share one context evaluation (250 ms)
+	dipDB         = 6.0   // a dip is at least this far below the music on both sides
+	dipDeepDB     = 10.0  // and somewhere at least this far
+	dipMs         = 6000  // for at least this long
+	dropBeforeDB  = 15.0  // a drop is at least this far below the music before
+	dropAfterDB   = 4.0   // and at least this far below the music after
+	dropAfterMax  = 10.0  // but less than this (the next song starts quieter)
+	dropMs        = 2500  // for at least this long
 )
 
 // Span is a stretch of envelope windows, To exclusive.
@@ -37,24 +53,153 @@ type Span struct{ From, To int }
 // Detect returns alternating start and end markers for the tracks found in
 // env (dBFS per WindowMs window), or nil when no confident split of at least
 // two tracks exists.
+//
+// Tracks separated by a pause get markers padMs into the pause. Tracks
+// separated by a fade or a drop, which are music, share one cut at its
+// quietest point: the next track starts one window after the end.
 func Detect(env []float32) []project.Marker {
 	kept := pieces(env)
-	if len(kept) < 2 {
+	cuts := contrastCuts(env, kept)
+	count := len(kept)
+	for _, c := range cuts {
+		count += len(c)
+	}
+	if count < 2 {
 		return nil
 	}
 
 	total := int64(len(env)) * WindowMs
-	out := make([]project.Marker, 0, 2*len(kept))
-	for _, t := range kept {
+	out := make([]project.Marker, 0, 2*count)
+	for i, t := range kept {
 		s := int64(t.From)*WindowMs - padMs
-		e := int64(t.To)*WindowMs + padMs
 		if s < 0 {
 			s = 0
 		}
+		for _, c := range cuts[i] {
+			e := int64(c) * WindowMs
+			out = append(out, project.Marker{Kind: project.MarkerStart, PositionMs: s}, project.Marker{Kind: project.MarkerEnd, PositionMs: e})
+			s = e + WindowMs
+		}
+		e := int64(t.To)*WindowMs + padMs
 		if e > total {
 			e = total
 		}
 		out = append(out, project.Marker{Kind: project.MarkerStart, PositionMs: s}, project.Marker{Kind: project.MarkerEnd, PositionMs: e})
+	}
+	return out
+}
+
+// contrastCuts returns, for each piece, the windows where it holds a fade or
+// a drop into the next song, keeping at least minTrackMs between cuts and
+// piece edges.
+func contrastCuts(env []float32, kept []Span) [][]int {
+	cuts := make([][]int, len(kept))
+	if len(kept) == 0 {
+		return cuts
+	}
+	n := len(env)
+	sm := smooth(env, smoothMs/WindowMs)
+	dip := make([]bool, n)
+	deep := make([]bool, n)
+	drop := make([]bool, n)
+	near, far, least := contextNearMs/WindowMs, contextFarMs/WindowMs, contextMinMs/WindowMs
+	for i := 0; i < n; i += contextStep {
+		before, okB := musicAround(env, i-far, i-near, least)
+		after, okA := musicAround(env, i+near, i+far, least)
+		if !okB || !okA {
+			continue
+		}
+		low := min(before, after)
+		for k := i; k < min(i+contextStep, n); k++ {
+			dip[k] = sm[k] <= low-dipDB
+			deep[k] = sm[k] <= low-dipDeepDB
+			drop[k] = sm[k] <= before-dropBeforeDB && sm[k] <= after-dropAfterDB && sm[k] > after-dropAfterMax
+		}
+	}
+
+	var found []Span
+	for _, r := range flagged(dip) {
+		if (r.To-r.From)*WindowMs < dipMs {
+			continue
+		}
+		for k := r.From; k < r.To; k++ {
+			if deep[k] {
+				found = append(found, r)
+				break
+			}
+		}
+	}
+	for _, r := range flagged(drop) {
+		if (r.To-r.From)*WindowMs >= dropMs {
+			found = append(found, r)
+		}
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].From < found[j].From })
+
+	margin := minTrackMs / WindowMs
+	for _, r := range found {
+		for i, p := range kept {
+			if r.From-p.From < margin || p.To-r.To < margin {
+				continue
+			}
+			c := r.From
+			for k := r.From; k < r.To; k++ {
+				if sm[k] < sm[c] {
+					c = k
+				}
+			}
+			last := p.From
+			if l := len(cuts[i]); l > 0 {
+				last = cuts[i][l-1]
+			}
+			if c-last >= margin && p.To-c >= margin {
+				cuts[i] = append(cuts[i], c)
+			}
+		}
+	}
+	return cuts
+}
+
+// smooth returns the mean of env over w windows centred on each window.
+func smooth(env []float32, w int) []float32 {
+	out := make([]float32, len(env))
+	for i := range env {
+		a, b := max(i-w/2, 0), min(i+w/2, len(env))
+		var s float32
+		for _, v := range env[a:b] {
+			s += v
+		}
+		out[i] = s / float32(b-a)
+	}
+	return out
+}
+
+// musicAround returns the median level of env[from:to] clipped to env; ok is
+// false when fewer than least windows remain.
+func musicAround(env []float32, from, to, least int) (float32, bool) {
+	from, to = max(from, 0), min(to, len(env))
+	if to-from < least {
+		return 0, false
+	}
+	c := append([]float32(nil), env[from:to]...)
+	sort.Slice(c, func(i, j int) bool { return c[i] < c[j] })
+	return c[len(c)/2], true
+}
+
+// flagged returns the runs of true values in f.
+func flagged(f []bool) []Span {
+	var out []Span
+	for i := 0; i < len(f); {
+		if !f[i] {
+			i++
+			continue
+		}
+		j := i
+		for j < len(f) && f[j] {
+			j++
+		}
+		out = append(out, Span{i, j})
+		i = j
 	}
 	return out
 }
