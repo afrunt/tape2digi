@@ -22,7 +22,7 @@ It is free, needs no account and keeps everything on your computer.
 * A cable from the player to your computer: into the computer's **line-in**, or into a small **USB audio interface** if your computer has only a headset socket or none at all.
 * tape2digi for your computer: macOS, Windows or Linux, from the [Releases page](https://github.com/afrunt/tape2digi/releases).
 
-Tip: play the tape and set the player's volume so the level meters move lively but stay well below the top. If a **Clipping** badge appears after recording, turn the volume down a little and record again.
+Tip: play the tape and set the player's volume so the loudest parts reach the marked zone on the level meter but never touch its end. If a **Clipping** badge appears after recording, turn the volume down a little and record again.
 
 ## How it works
 
@@ -55,7 +55,7 @@ Tip: play the tape and set the player's volume so the level meters move lively b
 
 ### Projects
 
-* On launch choose **New project** (a folder and a name), **Open project** or a project from the recent list. In a project, **Home** returns to the start screen and **New project** goes straight to the create form. **File → Open project…** (`Cmd/Ctrl+O`) or the **Open project…** button opens another project at any time. A running recording is stopped and unsaved changes are asked about first.
+* On launch choose **New project** (a folder and a name), **Open project** or a project from the recent list. In a project, **Home** returns to the start screen and **New project** goes straight to the create form. **File → Open project…** (`Cmd/Ctrl+O`) or the **Open project…** button opens another project at any time. A running recording is stopped and unsaved changes are asked about first. Folder pickers open where you last chose a project folder.
 * Fill in **Artist**, **Album**, **Year** and **Genre** (with suggestions; any text works). For a tape with various artists tick **Compilation**: the Artist field is disabled, the **Album Artist** column is hidden and the album artist becomes `V/A`; the typed artist is kept and still used for tracks without their own.
 * Add a cover image (PNG or JPEG) if you like.
 * Changes are kept as you type and **Save** lights up at once. **Save** (`Cmd/Ctrl+S`) writes them; **Save As…** (`Cmd/Ctrl+Shift+S`) copies the whole project, with those changes, to a new folder and opens the copy. Closing the project or the app with unsaved changes asks first.
@@ -70,7 +70,7 @@ Tip: play the tape and set the player's volume so the level meters move lively b
 
 * Choose the input; the meter next to it shows the left and right levels (one bar for mono). The quality (sample rate, mono or stereo, bit depth) can be changed before recording; the defaults suit cassettes.
 * **Monitor** (off by default) lets you listen to the input on the output chosen next to it. **System default** is the computer's current output when the monitor starts; a device you choose is remembered. Changing the output while listening does not touch the recording; if the sound does not follow a later change of the system output, toggle Monitor or pick the output again. Do not use it with a microphone near speakers: it causes feedback.
-* Press **Record side A** or **Record side B**; pause, resume and stop as you need. You are asked before a recorded side is replaced, and until **Save**, **Undo** brings the old recording back with its track marks and titles (also after importing or recovering a take over it).
+* Press **Record side A** or **Record side B**; pause, resume and stop as you need, or use the keys: `Cmd/Ctrl+R` records the next empty side, `Space` pauses or resumes, `Esc` stops. If no sound arrives for a while, a **No signal** note appears next to the timer: check the input and the player's volume. You are asked before a recorded side is replaced, and until **Save**, **Undo** brings the old recording back with its track marks and titles (also after importing or recovering a take over it).
 * **Auto-stop on silence** (on by default) ends the recording by itself when the side has been silent for the time you set (1 minute by default) and trims the silence at the end. It adapts to the noise of your tape, and a note on the side tells you when a recording was stopped this way.
 * After a recording, an import or an edit, tape2digi checks the side for distortion from a too high level (clipping); a **Clipping: N** badge shows how many places it found.
 * A new recording or import is kept aside and the project shows unsaved changes until you press **Save**; **Discard** drops it. If the app is closed unexpectedly during a recording, the project offers to **Recover** or delete that take the next time you open it.
@@ -90,7 +90,7 @@ Tip: play the tape and set the player's volume so the level meters move lively b
 * **Repair…** checks the side and offers only the fixes it needs: **DC offset** removal, a **Hum** filter for mains hum, **Balance** for a quieter channel, **Azimuth** to line up a channel delayed by a tilted tape head, and **Mono** from left, right or both. Each fix is applied separately and can be undone.
 * **Spectrogram**: the **Waveform** / **Spectrogram** switch shows the sound as frequencies over time, so hum (low lines), hiss (haze at the top) and clicks (vertical streaks) are easy to spot; it follows zoom and scroll.
 * **Clips**: places with distortion are marked on the ruler, and **Next clip** moves the playhead to the next one.
-* **Keys**: `S` / `E` add a start / end marker at the playhead, `[` and `]` jump to the previous / next marker, `Space` plays or pauses.
+* **Keys**: `S` / `E` add a start / end marker at the playhead, `[` and `]` jump to the previous / next marker, `Home` / `End` go to the start / end, `Space` plays or pauses.
 * **Reset** removes all markers of the side, with their titles and artists, in one step that **Undo** reverts; it is disabled when there are no markers.
 * **Undo / Redo** (the buttons at the left of the bottom bar next to the unsaved-changes dot, the **Edit** menu, `Cmd/Ctrl+Z`; redo `Cmd+Shift+Z` on macOS, `Ctrl+Y` elsewhere) work for markers, Split, the sound tools, side deletion and replacing a side with a new recording, import or recovered take, until **Save** or **Discard**. With the editor closed they undo or redo the most recent editor change of either side.
 
@@ -110,7 +110,7 @@ Tip: play the tape and set the player's volume so the level meters move lively b
 * **Export Original Recording** (off by default) also copies each side's saved recording unchanged as `side-a-recording.wav` and `side-b-recording.wav`.
 * **Presets**: **Save as preset…** keeps your export choices (everything but the folder) under a name; choose a preset to fill the dialog, or **Delete preset** to remove it.
 * The cover is also saved as `cover.png`.
-* After confirming, pick the target folder; existing files are replaced only after you confirm. Export can be cancelled, and unfinished files are removed.
+* After confirming, pick the target folder (the picker opens in the last one you used); existing files are replaced only after you confirm. Export can be cancelled, and unfinished files are removed.
 
 ### Language, theme and font size
 
@@ -125,7 +125,7 @@ Built with Go and [Wails v2](https://wails.io) (Svelte + TypeScript UI). Targets
 
 ### Specifications
 
-* **Recording**: 44.1 (default), 48 or 96 kHz; stereo (default) or mono; 16-bit (default) or 24-bit PCM WAV. The meter shows one bar for mono. Monitor is never remembered and is off at launch; a remembered output device is matched by name and falls back to the system default when missing; whether a running monitor follows a later change of the system default output depends on the OS audio backend.
+* **Recording**: 44.1 (default), 48 or 96 kHz; stereo (default) or mono; 16-bit (default) or 24-bit PCM WAV. The meter shows one bar for mono, a dB scale from -40 to 0 dB and a target zone for peaks from -12 to -6 dB. **No signal** appears after 10 s with every channel below -50 dBFS while recording (not while paused) and disappears when sound returns. Monitor is never remembered and is off at launch; a remembered output device is matched by name and falls back to the system default when missing; whether a running monitor follows a later change of the system default output depends on the OS audio backend.
 * **Auto-stop**: **Silence before auto-stop** in m:ss from 0:10 to 10:00 (1:00 by default); the take must be at least 30 s long; the silent tail is trimmed to 2 s; the threshold adapts to the tape's own noise floor; pausing resets the silent stretch.
 * **Import**: WAV, MP3, FLAC, Ogg Vorbis (Ogg Opus is not supported). The sample rate is kept; the result is 16-bit, or 24-bit for 24-bit and float sources; sources with more than two channels are mixed down to stereo.
 * **Project fields**: Album up to 200 characters (independent of **Compilation**); Year empty or 1900–2100; Genre accepts any text; cover PNG/JPEG up to 20 MB.
@@ -152,7 +152,7 @@ Built with Go and [Wails v2](https://wails.io) (Svelte + TypeScript UI). Targets
 * A project is a directory with `tape2digi.json` (schema v2), `side-A.wav`, `side-B.wav` and an optional `cover.png`/`cover.jpg`. Renaming a project changes only its name, not its directory. Projects from the earlier schema v1 still open; their old `recordings/` files are kept but not shown, and can be imported into a side. Markers are stored per side (schema stays 2; builds without this feature may drop the field when saving). A looked-up listing is stored per side as `listing`.
 * Recorded and imported audio and unsaved edits are kept in temporary files in the project's hidden `.tape2digi-staging` folder; only **Save** moves them into `side-A.wav` / `side-B.wav` (or deletes those files for a deleted side), and discarding drops them.
 * Markers are stored per side in `tape2digi.json` as `markers`, with the track titles and artists on them.
-* `settings.json` stores `language` (`en`/`uk`), `theme` (`dark`/`light`), `fontScale` (percent), the window sizes and positions, the export choices and presets.
+* `settings.json` stores `language` (`en`/`uk`), `theme` (`dark`/`light`), `fontScale` (percent), the window sizes and positions, the export choices and presets, and `lastExportDir` / `lastProjectsDir`, the folders the export and project pickers open in (a folder that no longer exists is ignored).
 * Limitation: the File menu is native on macOS; on Windows and Linux it appears in the window menu bar, and the same actions are available as buttons in the project header.
 * Limitation: on macOS and Linux the system WebView keeps its own cache outside `~/.tape2digi` and this cannot be redirected.
 
@@ -243,7 +243,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 * Кабель від плеєра до комп'ютера: у вхід **line-in** комп'ютера або в невеликий **USB-аудіоінтерфейс**, якщо на комп'ютері є лише гніздо гарнітури чи немає жодного.
 * tape2digi для вашого комп'ютера: macOS, Windows або Linux, зі [сторінки релізів](https://github.com/afrunt/tape2digi/releases).
 
-Порада: увімкніть касету й налаштуйте гучність плеєра так, щоб індикатори рівня жваво рухалися, але не доходили до верху. Якщо після запису з'явилася позначка **Clipping**, трохи зменште гучність і запишіть ще раз.
+Порада: увімкніть касету й налаштуйте гучність плеєра так, щоб найгучніші місця доходили до позначеної зони на індикаторі рівня, але ніколи не торкалися його кінця. Якщо після запису з'явилася позначка **Clipping**, трохи зменште гучність і запишіть ще раз.
 
 ## Як це працює
 
@@ -276,7 +276,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 
 ### Проєкти
 
-* Після запуску оберіть **New project** (тека й назва), **Open project** або проєкт зі списку недавніх. У проєкті **Home** повертає на стартовий екран, а **New project** одразу відкриває форму створення. **File → Open project…** (`Cmd/Ctrl+O`) або кнопка **Open project…** будь-коли відкриває інший проєкт. Запущений запис зупиняється, а про незбережені зміни спершу запитують.
+* Після запуску оберіть **New project** (тека й назва), **Open project** або проєкт зі списку недавніх. У проєкті **Home** повертає на стартовий екран, а **New project** одразу відкриває форму створення. **File → Open project…** (`Cmd/Ctrl+O`) або кнопка **Open project…** будь-коли відкриває інший проєкт. Запущений запис зупиняється, а про незбережені зміни спершу запитують. Вибір теки відкривається там, де ви востаннє обирали теку проєкту.
 * Заповніть **Artist**, **Album**, **Year** і **Genre** (з підказками; підійде будь-який текст). Для касети з різними виконавцями позначте **Compilation**: поле Artist вимикається, стовпець **Album Artist** ховається, а виконавцем альбому стає `V/A`; введений виконавець зберігається й далі використовується для треків без власного.
 * За бажанням додайте обкладинку (PNG або JPEG).
 * Зміни запам'ятовуються під час введення, і **Save** одразу стає активною. **Save** (`Cmd/Ctrl+S`) записує їх; **Save As…** (`Cmd/Ctrl+Shift+S`) копіює весь проєкт разом із цими змінами в нову теку й відкриває копію. Закриття проєкту чи застосунку з незбереженими змінами спершу запитує.
@@ -291,7 +291,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 
 * Оберіть вхід; індикатор поруч показує рівні лівого й правого каналів (одна смуга для моно). Якість (частоту дискретизації, моно чи стерео, розрядність) можна змінити до запису; значення за замовчуванням підходять для касет.
 * **Monitor** (вимкнений за замовчуванням) дає слухати вхід на виході, обраному поруч. **System default** — це поточний вихід комп'ютера на момент запуску монітора; обраний вами пристрій запам'ятовується. Зміна виходу під час прослуховування не впливає на запис; якщо звук не переходить за пізнішою зміною системного виходу, вимкніть і ввімкніть Monitor або оберіть вихід знову. Не вмикайте його з мікрофоном біля динаміків: виникне зворотний зв'язок.
-* Натисніть **Record side A** або **Record side B**; ставте на паузу, продовжуйте й зупиняйте, коли потрібно. Перед заміною записаної сторони вас запитають, а до **Save** **Undo** повертає старий запис разом із розмітками й назвами треків (так само після імпорту чи відновлення поверх неї).
+* Натисніть **Record side A** або **Record side B**; ставте на паузу, продовжуйте й зупиняйте, коли потрібно, або клавішами: `Cmd/Ctrl+R` записує наступну порожню сторону, `Space` ставить на паузу чи продовжує, `Esc` зупиняє. Якщо звук довго не надходить, біля таймера з'являється позначка **No signal**: перевірте вхід і гучність плеєра. Перед заміною записаної сторони вас запитають, а до **Save** **Undo** повертає старий запис разом із розмітками й назвами треків (так само після імпорту чи відновлення поверх неї).
 * **Auto-stop on silence** (увімкнено за замовчуванням) сам завершує запис, коли сторона мовчить заданий час (за замовчуванням 1 хвилину), і обрізає тишу в кінці. Він підлаштовується під шум вашої касети, а примітка на стороні повідомляє, що запис зупинено саме так.
 * Після запису, імпорту чи редагування tape2digi перевіряє сторону на спотворення через надто високий рівень (перевантаження); позначка **Clipping: N** показує, скільки таких місць знайдено.
 * Новий запис чи імпорт зберігається окремо, і проєкт показує незбережені зміни, доки ви не натиснете **Save**; **Discard** відкидає їх. Якщо застосунок несподівано закрився під час запису, наступного відкриття проєкт запропонує **Recover** або видалити цей запис.
@@ -311,7 +311,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 * **Repair…** перевіряє сторону й пропонує лише потрібні виправлення: прибрати **DC offset**, фільтр **Hum** від гулу мережі, **Balance** для тихішого каналу, **Azimuth**, щоб вирівняти канал, затриманий перекошеною головкою, і **Mono** з лівого, правого або обох каналів. Кожне виправлення застосовується окремо й скасовується.
 * **Спектрограма**: перемикач **Waveform** / **Spectrogram** показує звук як частоти в часі, тож гул (низькі лінії), шипіння (серпанок угорі) й клацання (вертикальні смуги) легко помітити; вона стежить за масштабом і прокруткою.
 * **Перевантаження**: місця зі спотворенням позначено на лінійці, а **Next clip** переводить позицію до наступного.
-* **Клавіші**: `S` / `E` додають маркер початку / кінця в позиції відтворення, `[` і `]` переходять до попереднього / наступного маркера, `Space` запускає або зупиняє відтворення.
+* **Клавіші**: `S` / `E` додають маркер початку / кінця в позиції відтворення, `[` і `]` переходять до попереднього / наступного маркера, `Home` / `End` — на початок / кінець, `Space` запускає або зупиняє відтворення.
 * **Reset** прибирає всі маркери сторони разом із назвами й виконавцями одним кроком, який скасовує **Undo**; кнопка вимкнена, якщо маркерів немає.
 * **Undo / Redo** (кнопки ліворуч у нижній панелі поруч із крапкою незбережених змін, меню **Edit**, `Cmd/Ctrl+Z`; повтор `Cmd+Shift+Z` у macOS, `Ctrl+Y` деінде) працюють для маркерів, Split, інструментів звуку, видалення сторони та заміни сторони новим записом, імпортом чи відновленим записом, до **Save** або **Discard**. Коли редактор закритий, вони скасовують або повторюють останню зміну редактора на будь-якій стороні.
 
@@ -331,7 +331,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 * **Export Original Recording** (вимкнено за замовчуванням) також копіює збережений запис кожної сторони без змін як `side-a-recording.wav` і `side-b-recording.wav`.
 * **Пресети**: **Save as preset…** зберігає ваш вибір експорту (усе, крім теки) під назвою; оберіть пресет, щоб заповнити діалог, або **Delete preset**, щоб його прибрати.
 * Обкладинка також зберігається як `cover.png`.
-* Після підтвердження оберіть теку; наявні файли замінюються лише після підтвердження. Експорт можна скасувати, а незавершені файли видаляються.
+* Після підтвердження оберіть теку (вибір відкривається в останній використаній); наявні файли замінюються лише після підтвердження. Експорт можна скасувати, а незавершені файли видаляються.
 
 ### Мова, тема та розмір шрифту
 
@@ -346,7 +346,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 
 ### Специфікації
 
-* **Запис**: 44,1 (за замовчуванням), 48 або 96 кГц; стерео (за замовчуванням) або моно; 16-бітний (за замовчуванням) або 24-бітний PCM WAV. Для моно індикатор показує одну смугу. Monitor ніколи не запам'ятовується й вимкнений під час запуску; запам'ятований пристрій виходу шукається за назвою, а якщо його немає, використовується системний вихід за замовчуванням; чи перейде запущений монітор на пізніше змінений системний вихід, залежить від аудіопідсистеми ОС.
+* **Запис**: 44,1 (за замовчуванням), 48 або 96 кГц; стерео (за замовчуванням) або моно; 16-бітний (за замовчуванням) або 24-бітний PCM WAV. Для моно індикатор показує одну смугу; шкала в дБ від -40 до 0 дБ і цільова зона для піків від -12 до -6 дБ. **No signal** з'являється, коли під час запису (не на паузі) всі канали 10 с тихіші за -50 dBFS, і зникає, щойно звук повертається. Monitor ніколи не запам'ятовується й вимкнений під час запуску; запам'ятований пристрій виходу шукається за назвою, а якщо його немає, використовується системний вихід за замовчуванням; чи перейде запущений монітор на пізніше змінений системний вихід, залежить від аудіопідсистеми ОС.
 * **Автозупинка**: **Silence before auto-stop** у форматі хв:сс від 0:10 до 10:00 (1:00 за замовчуванням); запис має тривати щонайменше 30 с; тиша в кінці обрізається до 2 с; поріг підлаштовується під власний рівень шуму касети; пауза скидає відлік тиші.
 * **Імпорт**: WAV, MP3, FLAC, Ogg Vorbis (Ogg Opus не підтримується). Частота дискретизації зберігається; результат 16-бітний або 24-бітний для 24-бітних і float-джерел; джерела з понад двома каналами зводяться до стерео.
 * **Поля проєкту**: Album до 200 символів (незалежно від **Compilation**); Year порожній або 1900–2100; Genre приймає будь-який текст; обкладинка PNG/JPEG до 20 МБ.
@@ -373,7 +373,7 @@ Record results per OS/arch in the pull request or release notes; none of the har
 * Проєкт — це тека з `tape2digi.json` (схема v2), `side-A.wav`, `side-B.wav` та необов'язковою `cover.png`/`cover.jpg`. Перейменування проєкту змінює лише його назву, а не теку. Проєкти зі старої схеми v1 усе ще відкриваються; їхні старі файли `recordings/` зберігаються, але не показуються, і їх можна імпортувати у сторону. Маркери зберігаються по сторонах (схема лишається 2; збірки без цієї можливості можуть втратити поле під час збереження). Знайдений онлайн список сторони зберігається як `listing`.
 * Записаний та імпортований звук і незбережені зміни зберігаються в тимчасових файлах у прихованій теці проєкту `.tape2digi-staging`; лише **Save** переносить їх у `side-A.wav` / `side-B.wav` (або видаляє ці файли для видаленої сторони), а відкидання змін їх прибирає.
 * Маркери зберігаються по сторонах у `tape2digi.json` як `markers` разом із назвами й виконавцями треків.
-* `settings.json` зберігає `language` (`en`/`uk`), `theme` (`dark`/`light`), `fontScale` (відсотки), розміри й положення вікон, вибір експорту та пресети.
+* `settings.json` зберігає `language` (`en`/`uk`), `theme` (`dark`/`light`), `fontScale` (відсотки), розміри й положення вікон, вибір експорту та пресети, а також `lastExportDir` / `lastProjectsDir` — теки, у яких відкривається вибір для експорту й проєктів (теку, якої вже немає, ігнорує).
 * Обмеження: меню File нативне в macOS; у Windows і Linux воно з'являється в смузі меню вікна, а ті самі дії доступні кнопками в заголовку проєкту.
 * Обмеження: у macOS і Linux системний WebView тримає власний кеш поза `~/.tape2digi`, і перенаправити його неможливо.
 

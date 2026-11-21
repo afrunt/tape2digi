@@ -628,8 +628,26 @@ func (a *App) RemoveRecent(path string) error { return a.recents.Remove(path) }
 // ---- dialogs and OS integration ----
 
 // ChooseFolder shows a native folder picker; it returns "" when cancelled.
-func (a *App) ChooseFolder(title string) (string, error) {
-	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{Title: title, CanCreateDirectories: true})
+// purpose ("export", "projectParent" or "project") selects the remembered
+// folder the picker opens in and updates it after a pick.
+func (a *App) ChooseFolder(title, purpose string) (string, error) {
+	opts := runtime.OpenDialogOptions{Title: title, CanCreateDirectories: true}
+	if d := a.settings.Load().StartFolder(purpose); d != "" {
+		if fi, err := os.Stat(d); err == nil && fi.IsDir() {
+			opts.DefaultDirectory = d
+		}
+	}
+	dir, err := runtime.OpenDirectoryDialog(a.ctx, opts)
+	if err != nil || dir == "" {
+		return dir, err
+	}
+	a.settingsMu.Lock()
+	defer a.settingsMu.Unlock()
+	cfg := a.settings.Load()
+	if cfg.RememberFolder(purpose, dir) {
+		_ = a.settings.Save(cfg) // a lost preference must not fail the pick
+	}
+	return dir, nil
 }
 
 // ChooseImage shows a native picker for PNG/JPEG files; it returns "" when cancelled.

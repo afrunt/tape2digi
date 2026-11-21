@@ -16,7 +16,7 @@
   })
 
   async function pickFolder() {
-    const dir = await ChooseFolder(t('dlg.copyFolderTitle'))
+    const dir = await ChooseFolder(t('dlg.copyFolderTitle'), 'projectParent')
     if (dir) parent = dir
   }
 
@@ -74,7 +74,7 @@
       <h2 id="sa-title">{t('saveAs')}</h2>
       <p class="muted">{t('dlg.saveAsNote')}</p>
       <label for="sa-name">{t('projectName')}</label>
-      <input id="sa-name" type="text" bind:value={name} maxlength="200" disabled={busy} />
+      <input id="sa-name" type="text" bind:value={name} maxlength="200" disabled={busy} onkeydown={(e) => e.key === 'Enter' && !e.isComposing && !busy && parent && name.trim() && saveAs()} />
       <label for="sa-parent">{t('folder')}</label>
       <div class="row">
         <input id="sa-parent" class="grow" type="text" value={parent} readonly placeholder={t('chooseFolderPlaceholder')} />

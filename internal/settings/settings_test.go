@@ -132,3 +132,30 @@ func TestExportPresetsLoadAndNormalize(t *testing.T) {
 		t.Fatalf("duplicate, empty and long names are dropped and bad values reset: %+v", p)
 	}
 }
+
+func TestStartAndRememberFolder(t *testing.T) {
+	var s Settings
+	if s.RememberFolder(FolderExport, "") || s.RememberFolder("other", "/x") {
+		t.Fatal("cancelled pick or unknown purpose must not change settings")
+	}
+	proj := filepath.Join("music", "tapes", "Album")
+	if !s.RememberFolder(FolderProject, proj) || s.LastProjectsDir != filepath.Dir(proj) {
+		t.Fatalf("project pick should remember its parent, got %q", s.LastProjectsDir)
+	}
+	if s.RememberFolder(FolderProjectParent, filepath.Dir(proj)) {
+		t.Fatal("same folder again must report no change")
+	}
+	if !s.RememberFolder(FolderExport, "out") {
+		t.Fatal("export pick should be remembered")
+	}
+	for purpose, want := range map[string]string{
+		FolderExport:        "out",
+		FolderProjectParent: filepath.Dir(proj),
+		FolderProject:       filepath.Dir(proj),
+		"other":             "",
+	} {
+		if got := s.StartFolder(purpose); got != want {
+			t.Errorf("StartFolder(%q) = %q, want %q", purpose, got, want)
+		}
+	}
+}

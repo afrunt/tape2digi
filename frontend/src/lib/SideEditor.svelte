@@ -654,7 +654,8 @@
     if (to !== undefined) void goTo(to)
   }
 
-  // S/E add a marker at the playhead, [ and ] jump between markers, Space plays.
+  // S/E add a marker at the playhead, [ and ] jump between markers, Home/End
+  // go to the start/end, Space plays.
   function onShortcut(e: KeyboardEvent): boolean {
     if (e.metaKey || e.ctrlKey || e.altKey || amplifying || !wave || menu || drag) return false
     const el = document.activeElement
@@ -677,6 +678,12 @@
         return true
       case 'BracketRight':
         jumpMarker(true)
+        return true
+      case 'Home':
+        void goTo(0)
+        return true
+      case 'End':
+        void goTo(duration)
         return true
     }
     return false
@@ -975,7 +982,7 @@
         <button onclick={() => zoomButtons(1 / 2)} disabled={!wave || !zoomed} title={t('edit.zoomOut')}>−</button>
         <span class="timer">{zoomText}</span>
         <button onclick={() => zoomButtons(2)} disabled={!wave || winMs <= Math.min(MIN_VIEW_MS, duration)} title={t('edit.zoomIn')}>+</button>
-        <button onclick={() => setView(0, duration)} disabled={!wave || !zoomed}>{t('edit.zoomFit')}</button>
+        <button onclick={() => setView(0, duration)} disabled={!wave || !zoomed} title={t('edit.zoomFitTitle')}>{t('edit.zoomFit')}</button>
         <span class="seg" role="group" aria-label={t('edit.view')}>
           <button aria-pressed={viewMode === 'wave'} onclick={() => setMode('wave')} disabled={!wave}>{t('edit.viewWave')}</button>
           <button aria-pressed={viewMode === 'spec'} onclick={() => setMode('spec')} disabled={!wave} title={t('edit.viewSpecHint')}>{t('edit.viewSpec')}</button>

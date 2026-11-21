@@ -3,6 +3,7 @@ package settings
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -48,6 +49,54 @@ type Settings struct {
 	OnlineLookup bool `json:"onlineLookup"`
 	// ExportPresets are named export choices (without the target folder).
 	ExportPresets []ExportPreset `json:"exportPresets,omitempty"`
+	// LastExportDir and LastProjectsDir are where the folder pickers open
+	// next time; empty means the system default.
+	LastExportDir   string `json:"lastExportDir,omitempty"`
+	LastProjectsDir string `json:"lastProjectsDir,omitempty"`
+}
+
+// Folder picker purposes.
+const (
+	FolderExport        = "export"
+	FolderProjectParent = "projectParent"
+	FolderProject       = "project"
+)
+
+// StartFolder is the remembered folder a picker for purpose opens in; ""
+// for an unknown purpose or when nothing is remembered yet.
+func (s Settings) StartFolder(purpose string) string {
+	switch purpose {
+	case FolderExport:
+		return s.LastExportDir
+	case FolderProjectParent, FolderProject:
+		return s.LastProjectsDir
+	}
+	return ""
+}
+
+// RememberFolder records the folder chosen for purpose and reports whether
+// anything changed. A chosen project folder remembers its parent, so the
+// next picker opens next to it.
+func (s *Settings) RememberFolder(purpose, chosen string) bool {
+	if chosen == "" {
+		return false
+	}
+	var dst *string
+	switch purpose {
+	case FolderExport:
+		dst = &s.LastExportDir
+	case FolderProjectParent:
+		dst = &s.LastProjectsDir
+	case FolderProject:
+		dst, chosen = &s.LastProjectsDir, filepath.Dir(chosen)
+	default:
+		return false
+	}
+	if *dst == chosen {
+		return false
+	}
+	*dst = chosen
+	return true
 }
 
 // ExportPreset is a named set of export choices.

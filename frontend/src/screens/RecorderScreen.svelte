@@ -40,7 +40,7 @@
   import { audio } from '../../wailsjs/go/models'
   import LevelMeter from '../lib/LevelMeter.svelte'
   import TrackTable from '../lib/TrackTable.svelte'
-  import { ask, errText, history, hooks, formatDuration, formatSize, SIDES, sideExistsMessage, ui } from '../lib/store.svelte'
+  import { ask, errText, history, hooks, meter, formatDuration, formatSize, SIDES, sideExistsMessage, ui } from '../lib/store.svelte'
 
   const RATES = [44100, 48000, 96000]
 
@@ -136,6 +136,49 @@
   const metering = $derived(ui.status.state !== 'idle')
   const meterChannels = $derived(metering ? ui.status.channels : channels)
 
+  // A take that stays below this level for this long is probably connected
+  // to the wrong input or has the deck volume at zero.
+  const SILENCE_DB = -50
+  const SILENCE_MS = 10_000
+  let silentSince = 0
+  let noSignal = $state(false)
+  function checkSilence() {
+    const now = performance.now()
+    const quiet = recording && meter.levels.length > 0 && meter.levels.every((l) => l.peakDb < SILENCE_DB)
+    if (!quiet) {
+      silentSince = 0
+      noSignal = false
+      return
+    }
+    silentSince ||= now
+    noSignal = now - silentSince >= SILENCE_MS
+  }
+
+  const mod = /Mac/i.test(navigator.userAgent) ? '⌘' : 'Ctrl+'
+  function typing(el: EventTarget | null, buttons: boolean) {
+    if (!(el instanceof HTMLElement)) return false
+    if (el.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) return true
+    return buttons && el.tagName === 'BUTTON'
+  }
+  function onKey(e: KeyboardEvent) {
+    if (e.repeat || e.defaultPrevented || flow || dialogOpen()) return
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'r') {
+      e.preventDefault()
+      if (busy || !metering) return
+      const side = SIDES.find((s) => !ui.project?.sides?.[s])
+      if (side) void record(side)
+      return
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey || !locked) return
+    if (e.key === ' ' && !typing(e.target, true)) {
+      e.preventDefault()
+      void pauseOrResume()
+    } else if (e.key === 'Escape' && !typing(e.target, false)) {
+      e.preventDefault()
+      void stop()
+    }
+  }
+
   let poll: ReturnType<typeof setInterval> | undefined
 
   const onNew = () => void close(true)
@@ -176,6 +219,7 @@
     await openInput()
     poll = setInterval(async () => {
       if (locked) ui.status = await Status()
+      checkSilence()
     }, 250)
   })
 
@@ -314,6 +358,20 @@
       }
     }
     ui.status = await Status()
+  }
+
+  function recordTitle(side: string) {
+    if (!metering) return t('rec.recordNoInput')
+    if (busy) return t('rec.busy')
+    const next = SIDES.find((s) => !ui.project?.sides?.[s])
+    return next === side ? t('rec.recordKey', { key: `${mod}R` }) : ''
+  }
+  function editTitle(info: { missing?: boolean; bitDepth: number } | undefined) {
+    if (!info) return t('rec.editEmpty')
+    if (info.missing) return t('rec.editMissing')
+    if (![16, 24].includes(info.bitDepth)) return t('rec.editBitDepth')
+    if (busy || ui.job) return t('rec.busy')
+    return ''
   }
 
   const pauseOrResume = () => run(() => (recording ? PauseRecording() : ResumeRecording()))
@@ -535,7 +593,7 @@
     if (flow || dialogOpen()) return
     flow = true
     try {
-      const dir = await ChooseFolder(t('start.chooseOpenTitle'))
+      const dir = await ChooseFolder(t('start.chooseOpenTitle'), 'project')
       if (!dir || !(await leave())) return
       try {
         ui.project = await OpenProject(dir)
@@ -574,6 +632,8 @@
   <button onclick={lookUpTracks} disabled={busy || !!ui.job || !hasTracks} title={t('lookup.buttonTitle')}>{t('lookup.button')}</button>
   <button onclick={() => (ui.exportOpen = true)} disabled={stepBlocked || !hasTracks} title={t('export.buttonTitle')}>{t('export.button')}</button>
 </header>
+
+<svelte:window onkeydown={onKey} />
 
 {#each ui.project?.leftovers ?? [] as l (l.side)}
   <div class="island banner" role="alert">
@@ -800,15 +860,16 @@
         </p>
         <div class="row">
           {#if active}
-            <button class="primary" onclick={pauseOrResume}>{recording ? t('rec.pause') : t('rec.resume')}</button>
-            <button class="danger" onclick={stop}>{t('rec.stop')}</button>
+            <button class="primary" onclick={pauseOrResume} title={t('rec.pauseKey')}>{recording ? t('rec.pause') : t('rec.resume')}</button>
+            <button class="danger" onclick={stop} title={t('rec.stopKey')}>{t('rec.stop')}</button>
             <span class="timer">{formatDuration(ui.status.elapsedMs)}</span>
             <span class="muted">{formatSize(ui.status.sizeBytes)}</span>
             {#if paused}<span class="muted">{t('rec.paused')}</span>{/if}
+            {#if noSignal}<span class="warn" role="status">{t('rec.noSignal')}</span>{/if}
           {:else}
-            <button class="primary" onclick={() => record(side)} disabled={!metering || busy}>● {t('rec.recordSide', { side })}</button>
+            <button class="primary" onclick={() => record(side)} disabled={!metering || busy} title={recordTitle(side)}>● {t('rec.recordSide', { side })}</button>
             <button onclick={() => importFile(side)} disabled={busy}>{t('rec.import')}</button>
-            <button onclick={() => (ui.edit = side)} disabled={!info || info.missing || ![16, 24].includes(info.bitDepth) || !!ui.job || busy}>{t('rec.edit')}</button>
+            <button onclick={() => (ui.edit = side)} disabled={!info || info.missing || ![16, 24].includes(info.bitDepth) || !!ui.job || busy} title={editTitle(info)}>{t('rec.edit')}</button>
             <button onclick={() => run(() => RevealSide(side))} disabled={!info || info.missing}>{t('rec.reveal')}</button>
             <button class="danger" onclick={() => deleteSide(side)} disabled={!info || busy || !!ui.job}>{t('rec.delete')}</button>
           {/if}
@@ -898,7 +959,8 @@
   .field > label {
     display: block;
   }
-  .clips {
+  .clips,
+  .warn {
     color: var(--warning);
   }
 

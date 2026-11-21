@@ -96,7 +96,8 @@
         }}
       >
         <label for="lk-artist">{t('rec.artist')}</label>
-        <input id="lk-artist" type="text" bind:value={artist} maxlength="200" disabled={busy} />
+        <!-- svelte-ignore a11y_autofocus -->
+        <input id="lk-artist" autofocus type="text" bind:value={artist} maxlength="200" disabled={busy} />
         <label for="lk-album">{t('rec.album')}</label>
         <input id="lk-album" type="text" bind:value={album} maxlength="200" disabled={busy} />
         <button class="primary" type="submit" disabled={busy || (!artist.trim() && !album.trim())}>{t('lookup.search')}</button>

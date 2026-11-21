@@ -18,8 +18,8 @@ export function ChooseAudioFile() {
   return window['go']['main']['App']['ChooseAudioFile']();
 }
 
-export function ChooseFolder(arg1) {
-  return window['go']['main']['App']['ChooseFolder'](arg1);
+export function ChooseFolder(arg1, arg2) {
+  return window['go']['main']['App']['ChooseFolder'](arg1, arg2);
 }
 
 export function ChooseImage() {

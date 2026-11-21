@@ -8,6 +8,8 @@
   const FLOOR_DB = -60
   const HOLD_MS = 1200
   const DECAY_PER_S = 0.5 // fraction of full scale per second
+  const SCALE = [-40, -20, -12, -6, 0]
+  const ZONE = [-12, -6] // peaks for a good transfer
 
   const names = $derived(channels === 1 ? ['M'] : ['L', 'R'])
   let covers: HTMLElement[] = $state([])
@@ -56,17 +58,27 @@
   }
 </script>
 
-<div class="meter" role="img" aria-label={t('meter.level')}>
+<div class="meter" role="img" aria-label={t('meter.levelTarget')} title={t('meter.levelTarget')}>
   {#each names as name, i}
     <div class="channel">
       <span class="label">{name}</span>
       <div class="track">
         <div class="cover" bind:this={covers[i]}></div>
+        <div class="zone" style:left="{pos(ZONE[0]) * 100}%" style:width="{(pos(ZONE[1]) - pos(ZONE[0])) * 100}%"></div>
         <div class="hold" bind:this={holds[i]}></div>
       </div>
       <button class="clip" bind:this={clipLamps[i]} title={t('meter.clipTitle')} aria-label={t('meter.clipReset', { name })} onclick={resetClip}></button>
     </div>
   {/each}
+  <div class="channel" aria-hidden="true">
+    <span class="label"></span>
+    <div class="scale">
+      {#each SCALE as db}
+        <span style:left="{pos(db) * 100}%">{db}</span>
+      {/each}
+    </div>
+    <span class="clip-space"></span>
+  </div>
 </div>
 
 <style>
@@ -110,6 +122,37 @@
     height: 100%;
     background: var(--text);
     will-change: transform;
+  }
+  .zone {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    box-sizing: border-box;
+    border-left: 1px solid var(--text-muted);
+    border-right: 1px solid var(--text-muted);
+    background: color-mix(in srgb, var(--text) 12%, transparent);
+    pointer-events: none;
+  }
+  .scale {
+    position: relative;
+    flex: 1;
+    height: calc(11px * var(--font-scale, 1));
+  }
+  .scale span {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    color: var(--text-muted);
+    font-size: calc(9px * var(--font-scale, 1));
+    line-height: 1;
+    white-space: nowrap;
+  }
+  .scale span:last-child {
+    transform: translateX(-100%);
+  }
+  .clip-space {
+    width: 10px;
+    flex: none;
   }
   .clip {
     min-width: 0;

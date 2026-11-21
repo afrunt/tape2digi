@@ -363,7 +363,7 @@
         <button onclick={() => zoomButtons(1 / 2)} disabled={!wave || !zoomed} title={t('edit.zoomOut')}>−</button>
         <span class="timer">{zoomText}</span>
         <button onclick={() => zoomButtons(2)} disabled={!wave || winMs <= Math.min(MIN_VIEW_MS, duration)} title={t('edit.zoomIn')}>+</button>
-        <button onclick={() => setView(0, duration)} disabled={!wave || !zoomed}>{t('edit.zoomFit')}</button>
+        <button onclick={() => setView(0, duration)} disabled={!wave || !zoomed} title={t('edit.zoomFitTitle')}>{t('edit.zoomFit')}</button>
       </div>
 
       {#if error}<p class="error small" role="alert">{error}</p>{/if}

@@ -987,6 +987,8 @@ export namespace settings {
 	    autoStopSec: number;
 	    onlineLookup: boolean;
 	    exportPresets?: ExportPreset[];
+	    lastExportDir?: string;
+	    lastProjectsDir?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -1009,6 +1011,8 @@ export namespace settings {
 	        this.autoStopSec = source["autoStopSec"];
 	        this.onlineLookup = source["onlineLookup"];
 	        this.exportPresets = this.convertValues(source["exportPresets"], ExportPreset);
+	        this.lastExportDir = source["lastExportDir"];
+	        this.lastProjectsDir = source["lastProjectsDir"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -20,7 +20,7 @@
   onMount(loadRecents)
 
   async function pickParent() {
-    const dir = await ChooseFolder(t('start.chooseNewTitle'))
+    const dir = await ChooseFolder(t('start.chooseNewTitle'), 'projectParent')
     if (dir) parent = dir
   }
 
@@ -51,7 +51,7 @@
   }
 
   async function openFolder() {
-    const dir = await ChooseFolder(t('start.chooseOpenTitle'))
+    const dir = await ChooseFolder(t('start.chooseOpenTitle'), 'project')
     if (dir) await open(dir)
   }
 
@@ -95,7 +95,8 @@
     >
       <h2>{t('start.newTitle')}</h2>
       <label for="pname">{t('projectName')}</label>
-      <input id="pname" type="text" bind:value={name} placeholder={t('start.namePlaceholder')} maxlength="200" />
+      <!-- svelte-ignore a11y_autofocus -->
+      <input id="pname" autofocus type="text" bind:value={name} placeholder={t('start.namePlaceholder')} maxlength="200" />
       <label for="pparent">{t('folder')}</label>
       <div class="row">
         <input id="pparent" type="text" bind:value={parent} placeholder={t('chooseFolderPlaceholder')} readonly />

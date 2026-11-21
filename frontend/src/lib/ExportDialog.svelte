@@ -146,7 +146,7 @@
   async function run() {
     error = ''
     result = null
-    const dir = await ChooseFolder(t('export.folderTitle'))
+    const dir = await ChooseFolder(t('export.folderTitle'), 'export')
     if (!dir) return
     busy = true
     try {
